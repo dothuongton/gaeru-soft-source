@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1792254667626,
+      "tag": "0000_careless_proemial_gods",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792257101205,
+      "tag": "0001_rainy_earthquake",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792258707402,
+      "tag": "0002_grey_johnny_blaze",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792259287525,
+      "tag": "0003_steady_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792259910742,
+      "tag": "0004_previous_tombstone",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792260534201,
+      "tag": "0005_table_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792263570839,
+      "tag": "0006_staff_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792284000000,
+      "tag": "0007_service_request_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792299697262,
+      "tag": "0008_daffy_bullseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792300711691,
+      "tag": "0009_sleepy_nick_fury",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+[
+  {
+    "filename": "chicken-rice.webp",
+    "suggestedName": "Cơm gà sốt Mộc",
+    "author": "khloe arledge",
+    "sourceUrl": "https://unsplash.com/photos/person-holding-rice-bowl--Uca3SGlOag",
+    "imageUrl": "https://images.unsplash.com/photo-1568093858174-0f391ea21c45?auto=format&fit=crop&w=900&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      427,
+      640
+    ],
+    "originalDimensions": [
+      900,
+      1350
+    ],
+    "bytes": 35216
+  },
+  {
+    "filename": "pho-beef.webp",
+    "suggestedName": "Phở bò",
+    "author": "Kirill Tonkikh",
+    "sourceUrl": "https://unsplash.com/photos/a-bowl-of-noodle-soup-with-chopsticks-on-the-side-NFQi_2HUNRI",
+    "imageUrl": "https://images.unsplash.com/photo-1631709497146-a239ef373cf1?auto=format&fit=crop&w=900&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      640,
+      427
+    ],
+    "originalDimensions": [
+      900,
+      600
+    ],
+    "bytes": 32424
+  },
+  {
+    "filename": "salad.webp",
+    "suggestedName": "Salad Mộc",
+    "author": "Anh Nguyen",
+    "sourceUrl": "https://unsplash.com/photos/bowl-of-vegetable-salad-_Uqj5BQb-mw",
+    "imageUrl": "https://images.unsplash.com/photo-1546069901-d5bfd2cbfb1f?auto=format&fit=crop&w=900&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      640,
+      640
+    ],
+    "originalDimensions": [
+      900,
+      900
+    ],
+    "bytes": 81172,
+    "visualNote": "Photograph includes greens, egg, and grilled protein; do not describe as vegan."
+  },
+  {
+    "filename": "fries.webp",
+    "suggestedName": "Khoai tây chiên",
+    "author": "Dextar Studio",
+    "sourceUrl": "https://unsplash.com/photos/a-white-bowl-filled-with-french-fries-next-to-a-dipping-sauce-RVIWSj7n1pw",
+    "imageUrl": "https://images.unsplash.com/photo-1681821671644-de136784e47d?auto=format&fit=crop&w=900&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      640,
+      427
+    ],
+    "originalDimensions": [
+      900,
+      600
+    ],
+    "bytes": 22830
+  },
+  {
+    "filename": "peach-tea.webp",
+    "suggestedName": "Trà đào sả",
+    "author": "Tkhao Khoang",
+    "sourceUrl": "https://unsplash.com/photos/a-glass-filled-with-ice-and-fruit-on-top-of-a-table-IvyJqrkq1Zc",
+    "imageUrl": "https://images.unsplash.com/photo-1676693420436-7fa448f054eb?auto=format&fit=crop&w=900&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      462,
+      640
+    ],
+    "originalDimensions": [
+      900,
+      1248
+    ],
+    "bytes": 37666
+  },
+  {
+    "filename": "tiramisu.webp",
+    "suggestedName": "Bánh tiramisu",
+    "author": "Kyndall Ramirez",
+    "sourceUrl": "https://unsplash.com/photos/cake-on-plate-vyYN2TwjW9M",
+    "imageUrl": "https://images.unsplash.com/photo-1560969617-715be4e54d97?auto=format&fit=crop&w=900&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      640,
+      427
+    ],
+    "originalDimensions": [
+      900,
+      600
+    ],
+    "bytes": 28162
+  },
+  {
+    "filename": "iced-coffee.webp",
+    "suggestedName": "Cà phê sữa đá",
+    "author": "frank mckenna",
+    "sourceUrl": "https://unsplash.com/photos/glass-of-iced-coffee-jODz47eM1w8",
+    "imageUrl": "https://images.unsplash.com/photo-1471922597728-92f81bfe2445?auto=format&fit=crop&w=900&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      640,
+      426
+    ],
+    "originalDimensions": [
+      900,
+      599
+    ],
+    "bytes": 14766
+  },
+  {
+    "filename": "hero.webp",
+    "suggestedName": "Bữa ngon tại Mộc",
+    "author": "Zayed Ahmed Zadu",
+    "sourceUrl": "https://unsplash.com/photos/a-bowl-of-rice-topped-with-glazed-chicken-and-vegetables-HnBGb_Kipdg",
+    "imageUrl": "https://images.unsplash.com/photo-1775039983749-aa6003c8ecf9?auto=format&fit=crop&w=1500&q=85",
+    "license": "Unsplash License",
+    "licenseUrl": "https://unsplash.com/license",
+    "purpose": "Illustrative prototype image; replace with actual store dish photographs before production.",
+    "dimensions": [
+      1200,
+      732
+    ],
+    "originalDimensions": [
+      1500,
+      915
+    ],
+    "bytes": 108352
+  }
+]

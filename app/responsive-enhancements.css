@@ -1,0 +1,536 @@
+/* Responsive dimensions keep the saved text and food-image multipliers active.
+   Screen-only rules preserve the printable table QR sheets. */
+@media screen {
+  .app-shell {
+    --moc-ui-small: max(14px, calc(17px * var(--moc-font-scale, 1)));
+    --moc-ui-body: max(16px, calc(20px * var(--moc-font-scale, 1)));
+    --moc-ui-label: max(16px, calc(21px * var(--moc-font-scale, 1)));
+    --moc-ui-title: max(24px, calc(36px * var(--moc-font-scale, 1)));
+    --moc-mobile-nav-height: 84px;
+    min-width: 0;
+    font-size: var(--moc-ui-body);
+    line-height: 1.5;
+  }
+
+  .app-shell :is(main, section, article, aside, fieldset, nav) { min-width: 0; }
+  .app-shell :is(button, a.primary, a.secondary, summary) { touch-action: manipulation; }
+  .app-shell :is(button, .primary, .secondary, .danger-button, summary) {
+    min-height: 44px;
+    max-width: 100%;
+  }
+  .app-shell :is(button, input, select, textarea) { line-height: 1.45; }
+  .app-shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+    min-width: 0;
+    max-width: 100%;
+    font-size: max(16px, calc(20px * var(--moc-font-scale, 1)));
+  }
+  .app-shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select) { min-height: 46px; }
+  .app-shell :is(button, .primary, .secondary) > svg { flex-shrink: 0; }
+  .app-shell :is(.icon-btn, .add-button, .otb-view-order, .admin-order-popup-close, .toast button) {
+    min-width: 44px;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .app-shell .food-photo { min-height: 0; }
+  .app-shell :is(.primary, .secondary, .danger-button) { font-size: var(--moc-ui-label); }
+  .app-shell .eyebrow { font-size: max(12px, calc(15px * var(--moc-font-scale, 1))); line-height: 1.55; }
+  .app-shell :is(.small, .muted.small, .sample-note) { font-size: var(--moc-ui-small); }
+
+  /* Header and menu: flex children can shrink, text can wrap, actions stay usable. */
+  .app-shell .demo-strip { min-height: 38px; padding-block: 5px; font-size: max(12px, calc(15px * var(--moc-font-scale, 1))); }
+  .app-shell .demo-strip button { font-size: max(13px, calc(16px * var(--moc-font-scale, 1))); }
+  .app-shell .site-header { min-height: 98px; gap: 16px; padding-block: 14px; }
+  .app-shell .brand-button { min-width: 0; max-width: 100%; text-align: left; }
+  .app-shell .brand { gap: 12px; }
+  .app-shell .brand-mark { width: 56px; height: 56px; }
+  .app-shell .brand-mark svg { width: 31px; height: 31px; }
+  .app-shell .brand strong { font-size: max(30px, calc(48px * var(--moc-font-scale, 1))); }
+  .app-shell .brand small { font-size: max(11px, calc(14px * var(--moc-font-scale, 1))); margin-top: 6px; }
+  .app-shell .top-nav { gap: 18px; }
+  .app-shell .top-nav button { font-size: var(--moc-ui-body); min-height: 46px; }
+  .app-shell .header-actions { min-width: 0; }
+  .app-shell :is(.table-pill, .call-top) { font-size: var(--moc-ui-small); min-height: 44px; }
+  .app-shell .store-ribbon { font-size: var(--moc-ui-small); gap: 7px; padding-block: 12px; }
+  .app-shell .store-ribbon strong { font-size: inherit; }
+  .app-shell .ordering-layout { grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; }
+  .app-shell .hero { min-height: 0; }
+  .app-shell .hero-copy { padding: 26px; }
+  .app-shell .hero h1 { font-size: max(32px, calc(56px * var(--moc-font-scale, 1))); margin: 14px 0 12px; }
+  .app-shell .hero-copy p { font-size: var(--moc-ui-small); line-height: 1.65; }
+  .app-shell .hero-copy button { font-size: var(--moc-ui-small); min-height: 44px; margin-top: 15px; }
+  .app-shell .hero-eyebrow { font-size: max(11px, calc(14px * var(--moc-font-scale, 1))); line-height: 1.5; }
+  .app-shell .hero-image-label { font-size: max(12px, calc(15px * var(--moc-font-scale, 1))); }
+  .app-shell .menu-toolbar h2 { font-size: var(--moc-ui-title); scroll-margin-top: 16px; }
+  .app-shell .menu-toolbar { gap: 18px; }
+  .app-shell .search-field { flex: 1 1 240px; min-width: 0; max-width: 430px; padding: 4px 12px; }
+  .app-shell .search-field input { width: 100%; margin: 0; transform: none; }
+  .app-shell .mobile-categories {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px;
+    padding: 5px 0 12px;
+    margin-bottom: 15px;
+  }
+  .app-shell .mobile-categories button { flex: 0 0 auto; white-space: nowrap; min-height: 46px; padding: 10px 15px; font-size: var(--moc-ui-small); }
+  .app-shell .menu-subheading { gap: 12px; }
+  .app-shell .menu-subheading > span { font-size: var(--moc-ui-body); }
+  .app-shell .menu-subheading small { font-size: var(--moc-ui-small); }
+  .app-shell .menu-subheading > label { min-width: 0; max-width: 100%; }
+  .app-shell .menu-subheading select { font-size: max(16px, calc(18px * var(--moc-font-scale, 1))); }
+  .app-shell .food-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 285px), 1fr)); gap: 18px; }
+  .app-shell .food-card { min-width: 0; max-width: none; }
+  .app-shell .food-photo { height: calc(255px * var(--moc-food-image-scale, 1)); aspect-ratio: auto; }
+  .app-shell .food-info { padding: 18px; }
+  .app-shell .food-title { font-size: max(18px, calc(25px * var(--moc-font-scale, 1))); min-height: 44px; text-align: left; }
+  .app-shell .food-info p { font-size: max(14px, calc(18px * var(--moc-font-scale, 1))); line-height: 1.6; }
+  .app-shell .food-bottom > strong { font-size: max(18px, calc(26px * var(--moc-font-scale, 1))); }
+  .app-shell .food-badge { font-size: max(12px, calc(15px * var(--moc-font-scale, 1))); }
+  .app-shell .food-bottom { gap: 12px; }
+  .app-shell .cart-panel { padding: 20px; }
+  .app-shell .cart-heading h2 { font-size: var(--moc-ui-label); }
+  .app-shell :is(.cart-line-content > strong, .cart-line-bottom > b, .cart-panel .primary) { font-size: var(--moc-ui-body); }
+  .app-shell :is(.cart-line-content > small, .cart-explanation, .cart-footnote, .cart-table, .cart-connection-note) { font-size: var(--moc-ui-small); }
+  .app-shell .cart-line { flex-wrap: nowrap; align-items: flex-start; gap: 12px; }
+  .app-shell .cart-line-content { flex: 1; min-width: 0; }
+  .app-shell .cart-line > img { width: calc(78px * var(--moc-food-image-scale, 1)); height: calc(84px * var(--moc-food-image-scale, 1)); }
+  .app-shell .cart-line-bottom { flex-wrap: wrap; align-items: center; gap: 10px; }
+  .app-shell .stepper button, .app-shell .stepper.mini button { width: 44px; height: 44px; }
+  .app-shell .stepper strong, .app-shell .stepper > span { min-width: 32px; font-size: var(--moc-ui-body); }
+
+  /* Customer connection remains visible at every width, including the active state. */
+  .app-shell .table-connection-banner { flex-wrap: wrap; align-items: center; gap: 12px; }
+  .app-shell .table-connection-banner > div { min-width: 0; flex: 1 1 180px; }
+  .app-shell .table-connection-banner strong { font-size: var(--moc-ui-body); }
+  .app-shell .table-connection-banner p { font-size: var(--moc-ui-small); line-height: 1.6; }
+  .app-shell .table-connection-banner .secondary { font-size: var(--moc-ui-small); }
+  .app-shell .connection-confirmed { display: inline-flex; font-size: var(--moc-ui-small); }
+
+  /* The active table board uses the available desktop width without squeezing cards. */
+  .app-shell .admin-page { width: calc(100% - 48px); max-width: 1680px; margin: 26px auto 0; }
+  .app-shell .admin-page .page-heading { gap: 16px; margin-bottom: 22px; }
+  .app-shell .admin-page .page-heading h1 { font-size: max(28px, calc(44px * var(--moc-font-scale, 1))); line-height: 1.2; }
+  .app-shell .admin-page .page-heading p:not(.eyebrow) { font-size: var(--moc-ui-small); }
+  .app-shell .admin-tools { flex-wrap: wrap; max-width: 100%; }
+  .app-shell .admin-tools .icon-label span { display: inline; }
+  .app-shell .admin-tools .secondary { font-size: var(--moc-ui-small); padding: 10px 13px; }
+  .app-shell .admin-audio-strip { font-size: var(--moc-ui-small); padding: 12px 14px; gap: 10px 18px; }
+  .app-shell .admin-audio-strip > span { min-width: min(100%, 240px); }
+  .app-shell .admin-audio-strip > button { font-size: var(--moc-ui-small); white-space: normal; }
+  .app-shell .admin-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 0 10px;
+    gap: 8px;
+  }
+  .app-shell .admin-tabs > button { flex: 0 0 auto; white-space: nowrap; min-height: 48px; padding: 12px 16px; font-size: var(--moc-ui-body); }
+  .app-shell .admin-tabs b { font-size: var(--moc-ui-small); min-width: 26px; min-height: 26px; }
+  .app-shell .admin-day-totals { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 22px; padding: 18px 20px; font-size: var(--moc-ui-body); }
+  .app-shell .admin-day-totals > span { min-width: 0; flex-wrap: wrap; }
+  .app-shell .admin-day-totals > span:first-child strong { font-size: max(24px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .admin-day-totals > small { grid-column: 1 / -1; font-size: var(--moc-ui-small); }
+  .app-shell :is(.otb-heading, .otb-toolbar, .otb-overview) { flex-wrap: wrap; gap: 12px 20px; }
+  .app-shell .otb-heading { margin-bottom: 18px; }
+  .app-shell :is(.otb-heading h2, .rev-heading h2, .section-heading h2) { font-size: var(--moc-ui-title); }
+  .app-shell :is(.otb-heading > div > p:last-child, .otb-overview > span, .otb-footnote) { font-size: var(--moc-ui-small); }
+  .app-shell .otb-overview strong { font-size: var(--moc-ui-label); }
+  .app-shell .otb-filters { flex: 1 1 500px; min-width: 0; flex-wrap: wrap; gap: 8px; }
+  .app-shell .otb-filters > button { font-size: var(--moc-ui-small); padding: 9px 12px; }
+  .app-shell .otb-filters > button > span { min-width: 24px; font-size: inherit; }
+  .app-shell .otb-zone { font-size: var(--moc-ui-small); }
+  .app-shell .otb-zone select { min-width: 0; font-size: max(16px, calc(18px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; align-items: start; }
+  .app-shell .otb-card { padding: 22px; scroll-margin-top: 24px; }
+  .app-shell .otb-card-heading { gap: 12px; flex-wrap: wrap; }
+  .app-shell .otb-card-heading h3 { font-size: max(26px, calc(36px * var(--moc-font-scale, 1))); }
+  .app-shell :is(.otb-card-heading > div > span, .otb-state-badge, .otb-new-badge, .otb-card-totals > span) { font-size: var(--moc-ui-small); }
+  .app-shell .otb-new-badge strong { font-size: var(--moc-ui-body); }
+  .app-shell .otb-customer { flex-wrap: wrap; gap: 8px; }
+  .app-shell .otb-customer > strong { font-size: var(--moc-ui-body); }
+  .app-shell .otb-customer > time { font-size: var(--moc-ui-small); }
+  .app-shell .otb-card-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .app-shell .otb-card-totals strong { font-size: max(21px, calc(29px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-card-totals small { font-size: max(13px, calc(16px * var(--moc-font-scale, 1))); }
+  .app-shell :is(.otb-latest p, .otb-support-title, .otb-pending-content > p) { font-size: var(--moc-ui-body); }
+  .app-shell :is(.otb-latest > span, .otb-latest > span time, .otb-close-note, .otb-support-call time, .otb-order-heading time, .otb-order-heading .status-badge, .otb-order-items > div > span > small) { font-size: var(--moc-ui-small); }
+  .app-shell :is(.otb-history-toggle, .otb-transfer-button, .otb-close-button, .otb-table-pay, .otb-support-call button, .otb-support-call strong, .otb-order-actions > .primary, .otb-order-actions > .secondary, .otb-cancel-order) { font-size: var(--moc-ui-small); }
+  .app-shell .otb-card-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .app-shell .otb-history-toggle { grid-column: 1 / -1; width: 100%; }
+  .app-shell .otb-history { margin: 20px -22px -22px; }
+  .app-shell :is(.otb-transfer-button, .otb-close-button) { width: 100%; justify-content: center; padding: 10px; }
+  .app-shell .otb-support-call { flex-wrap: wrap; gap: 10px; }
+  .app-shell .otb-support-call > div { flex: 1 1 190px; }
+  .app-shell .otb-support-call button { width: auto; padding: 10px 12px; }
+  .app-shell :is(.otb-history-heading, .otb-order-total) { flex-wrap: wrap; gap: 8px 16px; }
+  .app-shell :is(.otb-history-heading strong, .otb-order-heading > div > strong, .otb-order-items > div > span > strong, .otb-order-items > div > b, .otb-order-items > div > strong) { font-size: var(--moc-ui-body); }
+  .app-shell :is(.otb-history-heading span, .otb-order-total > span, .otb-order-note) { font-size: var(--moc-ui-small); }
+  .app-shell .otb-order-total > strong { font-size: max(20px, calc(26px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-order-actions { flex-wrap: wrap; gap: 8px; }
+  .app-shell .otb-order-actions > :is(.primary, .secondary) { flex: 1 1 165px; padding: 10px 12px; }
+  .app-shell .otb-order-list { max-height: min(65dvh, 720px); overscroll-behavior-y: contain; }
+
+  /* Revenue stays readable; only detailed ledgers scroll horizontally. */
+  .app-shell :is(.rev-heading, .rev-heading-actions, .rev-section-heading, .rev-report-status, .rev-chart-detail, .rev-pagination, .sth-heading, .sth-pagination) { flex-wrap: wrap; }
+  .app-shell .rev-heading > div { min-width: 0; }
+  .app-shell .rev-range-form { grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(180px, 1.3fr) auto; align-items: end; }
+  .app-shell .rev-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .app-shell .rev-metric > strong { font-size: max(24px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .rev-small-stats strong { font-size: max(23px, calc(30px * var(--moc-font-scale, 1))); }
+  .app-shell :is(.rev-metric-title, .rev-heading > div > p:last-child, .rev-report-status, .rev-metric > p, .rev-metric-note, .rev-small-stats > div > span, .rev-section-heading p, .rev-card-footnote, .rev-footer-note, .rev-ledger-scope, .rev-active-range, .rev-active-range small) { font-size: var(--moc-ui-small); }
+  .app-shell :is(.rev-section-heading h3, .sth-heading h3) { font-size: max(21px, calc(26px * var(--moc-font-scale, 1))); }
+  .app-shell .rev-breakdown-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+  .app-shell :is(.rev-rank-main strong, .rev-ranking-row > b, .rev-payment-list strong, .rev-payment-list > div > span) { font-size: var(--moc-ui-body); }
+  .app-shell .rev-payment-total > strong { font-size: max(25px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .rev-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+  .app-shell :is(.rev-simple-table, .rev-order-table) { font-size: var(--moc-ui-small); }
+  .app-shell .rev-order-table { min-width: 920px; }
+  .app-shell .rev-order-actions > button { width: auto; min-width: 100px; }
+  .app-shell .rev-pagination > div, .app-shell .sth-pagination > div { flex-wrap: wrap; min-width: 0; gap: 8px; }
+  .app-shell .sth-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-shell .sth-summary > div > strong { font-size: max(25px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .sth-visit-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .app-shell :is(.sth-visit-customer, .sth-visit-count, .sth-visit-total, .sth-expand) { grid-column: auto; grid-row: auto; }
+  .app-shell .sth-visit-customer { grid-column: 1 / -1; }
+  .app-shell :is(.sth-visit-customer strong, .sth-detail-payment > strong, .sth-visit-total > strong) { font-size: var(--moc-ui-label); }
+  .app-shell :is(.sth-heading p, .sth-visit-customer p, .sth-visit-time time, .sth-visit-time > span, .sth-visit-total > span, .sth-visit-count > span, .sth-visit-count > strong, .sth-summary > div > span) { font-size: var(--moc-ui-small); }
+  .app-shell .sth-detail-orders { overscroll-behavior-y: contain; }
+
+  /* Food and table management remain usable with large image and font settings. */
+  .app-shell .manage-menu-row { grid-template-columns: calc(110px * var(--moc-food-image-scale, 1)) minmax(0, 1fr) auto; }
+  .app-shell .manage-menu-row > img { width: calc(110px * var(--moc-food-image-scale, 1)); height: calc(96px * var(--moc-food-image-scale, 1)); }
+  .app-shell .manage-menu-name strong { font-size: var(--moc-ui-label); }
+  .app-shell .manage-menu-name > span { font-size: var(--moc-ui-small); }
+  .app-shell .manage-price { font-size: var(--moc-ui-body); min-width: 0; overflow-wrap: anywhere; }
+  .app-shell .manage-menu-row .availability { font-size: var(--moc-ui-small); }
+  .app-shell .table-opening-row { flex-wrap: wrap; gap: 12px 18px; }
+  .app-shell .table-opening-actions { flex-wrap: wrap; }
+  .app-shell .table-opening-actions button { font-size: var(--moc-ui-small); }
+  .app-shell .table-session-card .qr-card-head > strong { font-size: max(24px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .table-session-card .qr-store-name { font-size: max(25px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .table-session-pending-actions > button { white-space: normal; font-size: var(--moc-ui-small); }
+  .app-shell .settings-layout { width: 100%; max-width: none; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); }
+  .app-shell :is(.settings-form h2, .settings-guide h2) { font-size: var(--moc-ui-title); }
+  .app-shell :is(.settings-form > p, .settings-guide p, .settings-guide ol) { font-size: var(--moc-ui-body); }
+  .app-shell .settings-guide ol { line-height: 1.9; }
+
+  /* Dialog content scrolls inside the viewport; the order action stays reachable. */
+  .app-shell .modal { max-height: min(92dvh, 980px); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .app-shell .modal-header { position: sticky; top: 0; z-index: 2; align-items: center; }
+  .app-shell .modal-header h2 { font-size: max(20px, calc(26px * var(--moc-font-scale, 1))); line-height: 1.35; }
+  .app-shell .modal:has(> .item-detail)[open] { display: flex; flex-direction: column; overflow: hidden; }
+  .app-shell .modal:has(> .item-detail) > .modal-header { flex-shrink: 0; }
+  .app-shell .item-detail { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; flex: 1 1 auto; }
+  .app-shell .detail-photo { height: calc(290px * var(--moc-food-image-scale, 1)); max-height: 50dvh; }
+  .app-shell .detail-intro h2 { font-size: var(--moc-ui-title); }
+  .app-shell .detail-intro strong { font-size: max(22px, calc(29px * var(--moc-font-scale, 1))); }
+  .app-shell .detail-intro p { font-size: var(--moc-ui-body); }
+  .app-shell .detail-bottom { position: static; flex-shrink: 0; }
+  .app-shell .detail-bottom > .primary { font-size: var(--moc-ui-body); }
+  .app-shell .detail-bottom > .primary strong { font-size: var(--moc-ui-label); }
+  .app-shell :is(.option-row, .taste-options label, .field > span) { font-size: var(--moc-ui-body); }
+  .app-shell .option-row strong { font-size: var(--moc-ui-small); }
+  .app-shell .option-row { min-height: 48px; }
+  .app-shell .option-row span { flex-basis: 120px; }
+  .app-shell .taste-options label { min-height: 46px; }
+  .app-shell .modal .compact .cart-lines { max-height: none; }
+  .app-shell :is(.help-body > p, .help-choice small, .connection-description, .connection-device-note p, .connection-help, .connection-request-summary) { font-size: var(--moc-ui-body); }
+  .app-shell .help-choice strong { font-size: var(--moc-ui-label); }
+  .app-shell .connection-body > h2 { font-size: var(--moc-ui-title); }
+  .app-shell :is(.tp-header h2, .tt-header h2) { font-size: var(--moc-ui-title); }
+  .app-shell :is(.tp-header p, .tt-header p, .tt-description, .tp-primary, .tp-secondary, .tt-primary, .tt-secondary) { font-size: var(--moc-ui-body); }
+  .app-shell :is(.tp-orders, .tt-destinations) { overscroll-behavior-y: contain; }
+  .app-shell :is(.tp-footer, .tt-footer, .otb-close-actions, .table-close-actions) { flex-wrap: wrap; }
+  .app-shell :is(.tp-footer > button, .tt-footer > button, .otb-close-actions > button, .table-close-actions > button) { min-width: 0; }
+  .app-shell .admin-order-popup { max-height: 75dvh; overflow-y: auto; overscroll-behavior: contain; }
+  .app-shell .admin-order-popup-content > strong { font-size: max(24px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .admin-order-popup-content > p, .app-shell .admin-order-popup-content > button { font-size: var(--moc-ui-body); }
+  .app-shell .admin-order-popup-label, .app-shell .admin-order-popup-waiting { font-size: var(--moc-ui-small); }
+  .app-shell .toast { font-size: var(--moc-ui-small); }
+}
+
+@media screen and (max-width: 1250px) {
+  .app-shell .ordering-layout { display: block; }
+  .app-shell[data-view="menu"] .menu-main { padding-bottom: calc(115px + env(safe-area-inset-bottom)); }
+  .app-shell .mobile-cart-bar { bottom: calc(18px + env(safe-area-inset-bottom)); }
+  .app-shell .mobile-cart-bar > span:nth-child(2) { font-size: var(--moc-ui-body); }
+  .app-shell .mobile-cart-bar strong { font-size: var(--moc-ui-label); }
+  .app-shell .rev-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell .rev-range-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell .settings-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media screen and (min-width: 1000px) {
+  .app-shell .table-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+}
+
+@media screen and (max-width: 1000px) {
+  .app-shell .rev-breakdown-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .rev-small-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell .sth-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .app-shell .sth-visit-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-shell .sth-visit-customer { grid-column: 1 / -1; }
+  .app-shell .hero { grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); }
+  .app-shell .hero-image { height: auto; min-height: 0; max-height: none; }
+  .app-shell .top-nav { width: auto; flex: 1 1 400px; }
+}
+
+@media screen and (max-width: 760px) {
+  .app-shell { --moc-ui-small: max(14px, calc(16px * var(--moc-font-scale, 1))); --moc-ui-body: max(16px, calc(19px * var(--moc-font-scale, 1))); --moc-ui-label: max(17px, calc(21px * var(--moc-font-scale, 1))); --moc-ui-title: max(25px, calc(32px * var(--moc-font-scale, 1))); }
+  .app-shell .demo-strip { min-height: 30px; padding: 4px 14px; gap: 4px 10px; }
+  .app-shell .demo-strip > span:last-child { font-size: max(11px, calc(13px * var(--moc-font-scale, 1))); }
+  .app-shell .demo-strip button { min-height: 44px; }
+  .app-shell .site-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 12px 14px; gap: 10px; min-height: 0; }
+  .app-shell .brand-mark { width: 44px; height: 44px; }
+  .app-shell .brand-mark svg { width: 25px; height: 25px; }
+  .app-shell .brand { gap: 9px; }
+  .app-shell .brand strong { font-size: max(27px, calc(38px * var(--moc-font-scale, 1))); line-height: 1; }
+  .app-shell .brand small { font-size: max(11px, calc(12px * var(--moc-font-scale, 1))); margin-top: 4px; line-height: 1.45; }
+  .app-shell .header-actions { width: auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 150px; }
+  .app-shell .table-pill { flex: 0 1 auto; max-width: 150px; min-height: 44px; padding: 8px 10px; font-size: max(14px, calc(17px * var(--moc-font-scale, 1))); }
+  .app-shell .call-top { min-width: 44px; min-height: 44px; padding: 10px; }
+  .app-shell .top-nav { display: none; }
+  .app-shell .store-ribbon { margin: 0 14px; padding-block: 10px; font-size: max(13px, calc(15px * var(--moc-font-scale, 1))); }
+  .app-shell .table-connection-banner { margin-inline: 14px; padding: 12px 14px; gap: 10px; }
+  .app-shell .table-connection-banner > svg { width: 22px; height: 22px; }
+  .app-shell .table-connection-banner > div { flex-basis: 170px; }
+  .app-shell .connection-confirmed { display: inline-flex; }
+  .app-shell .ordering-layout { margin-inline: 14px; }
+  .app-shell .hero { grid-template-columns: minmax(0, 1fr) minmax(0, .58fr); }
+  .app-shell .hero-copy { padding: 18px; }
+  .app-shell .hero h1 { font-size: max(26px, calc(33px * var(--moc-font-scale, 1))); line-height: 1.16; margin: 12px 0 10px; }
+  .app-shell .hero-copy p { font-size: max(13px, calc(15px * var(--moc-font-scale, 1))); line-height: 1.55; }
+  .app-shell .hero-copy button { min-height: 44px; padding: 8px 10px; gap: 7px; font-size: max(13px, calc(16px * var(--moc-font-scale, 1))); }
+  .app-shell .hero-eyebrow { font-size: max(10px, calc(11px * var(--moc-font-scale, 1))); }
+  .app-shell .hero-image-label { display: none; }
+  .app-shell .hero-image > img { object-fit: cover; }
+  .app-shell .menu-toolbar { flex-direction: column; align-items: stretch; gap: 12px; margin-top: 22px; }
+  .app-shell .menu-toolbar h2 { font-size: var(--moc-ui-title); }
+  .app-shell .search-field { flex: 0 1 auto; width: 100%; max-width: none; }
+  .app-shell .mobile-categories { margin-inline: -14px; padding-inline: 14px; padding-bottom: 12px; position: static; }
+  .app-shell .mobile-categories button { min-height: 44px; font-size: var(--moc-ui-small); padding: 9px 13px; }
+  .app-shell .menu-subheading { margin-bottom: 12px; padding-top: 0; }
+  .app-shell .menu-subheading > span { font-size: var(--moc-ui-body); }
+  .app-shell .food-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .app-shell .food-photo { height: calc(205px * var(--moc-food-image-scale, 1)); min-height: 0; }
+  .app-shell .food-title { font-size: max(18px, calc(23px * var(--moc-font-scale, 1))); }
+  .app-shell .food-info { padding: 16px; }
+  .app-shell .food-info p { font-size: max(14px, calc(17px * var(--moc-font-scale, 1))); }
+  .app-shell .food-bottom > strong { font-size: max(19px, calc(24px * var(--moc-font-scale, 1))); }
+  .app-shell[data-view="menu"] .menu-main { padding-bottom: calc(200px + env(safe-area-inset-bottom)); }
+  .app-shell :is(.orders-page, .about-page) { padding: 18px 14px calc(108px + env(safe-area-inset-bottom)); }
+  .app-shell .mobile-nav { height: calc(var(--moc-mobile-nav-height) + env(safe-area-inset-bottom)); padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); gap: 6px; align-items: stretch; }
+  .app-shell .mobile-nav button { flex: 1 1 0; min-width: 0; min-height: 0; gap: 4px; justify-content: center; }
+  .app-shell .mobile-nav button > svg { width: 22px; height: 22px; }
+  .app-shell .mobile-nav button span { font-size: max(12px, calc(14px * var(--moc-font-scale, 1))); line-height: 1.25; }
+  .app-shell .mobile-cart-bar { left: 14px; right: 14px; bottom: calc(var(--moc-mobile-nav-height) + 10px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; padding: 12px 14px; gap: 10px; text-align: left; }
+  .app-shell .mobile-cart-bar > span:nth-child(2) { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; gap: 2px; font-size: max(16px, calc(18px * var(--moc-font-scale, 1))); }
+  .app-shell .mobile-cart-bar strong { margin-left: 0; font-size: max(18px, calc(22px * var(--moc-font-scale, 1))); overflow-wrap: anywhere; }
+  .app-shell .cart-count { min-width: 32px; min-height: 32px; font-size: var(--moc-ui-small); }
+  .app-shell .toast { bottom: calc(var(--moc-mobile-nav-height) + 18px + env(safe-area-inset-bottom)); padding: 10px 12px; max-height: 50dvh; }
+  .app-shell[data-view="menu"] .toast { bottom: calc(var(--moc-mobile-nav-height) + 110px + env(safe-area-inset-bottom)); }
+  .app-shell[data-view="admin"] .toast { bottom: calc(16px + env(safe-area-inset-bottom)); }
+
+  .app-shell .page-heading { flex-wrap: wrap; }
+  .app-shell .page-heading h1 { font-size: max(28px, calc(38px * var(--moc-font-scale, 1))); }
+  .app-shell .page-heading p:not(.eyebrow) { font-size: var(--moc-ui-body); }
+  .app-shell .customer-orders { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .receipt { padding: 16px; }
+  .app-shell .receipt-header h2 { font-size: max(22px, calc(28px * var(--moc-font-scale, 1))); }
+  .app-shell .receipt-header p { font-size: var(--moc-ui-small); }
+  .app-shell .receipt-items strong { font-size: var(--moc-ui-body); }
+  .app-shell .receipt-items small { font-size: var(--moc-ui-small); }
+  .app-shell .receipt-items > div > div { flex-basis: 120px; }
+  .app-shell .receipt-total { flex-direction: row; align-items: center; }
+  .app-shell .receipt-total > strong { font-size: max(23px, calc(29px * var(--moc-font-scale, 1))); }
+  .app-shell .receipt-total > span { font-size: var(--moc-ui-small); }
+  .app-shell .orders-footer { display: flex; flex-wrap: wrap; gap: 10px; }
+  .app-shell .orders-footer > button { flex: 1 1 170px; }
+
+  .app-shell .admin-page { width: calc(100% - 28px); margin-top: 20px; padding-bottom: calc(30px + env(safe-area-inset-bottom)); }
+  .app-shell .admin-page .page-heading { gap: 12px; }
+  .app-shell .admin-page .page-heading h1 { font-size: max(27px, calc(34px * var(--moc-font-scale, 1))); max-width: none; }
+  .app-shell .admin-tools { justify-content: flex-start; }
+  .app-shell .admin-tabs { margin-inline: -14px; padding-inline: 14px; gap: 7px; }
+  .app-shell .admin-tabs > button { font-size: var(--moc-ui-small); padding: 10px 13px; min-height: 48px; }
+  .app-shell .admin-day-totals { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 6px; }
+  .app-shell .admin-day-totals > span:first-child { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .app-shell .admin-day-totals > span:first-child strong { font-size: max(27px, calc(36px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .app-shell .otb-card { padding: 16px; }
+  .app-shell .otb-history { margin: 18px -16px -16px; }
+  .app-shell .otb-card-heading h3 { font-size: max(25px, calc(32px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-card-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .app-shell .otb-card-totals strong { font-size: max(19px, calc(24px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-card-totals > span { font-size: max(13px, calc(15px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-card-totals small { font-size: max(12px, calc(14px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-toolbar { display: block; }
+  .app-shell .otb-filters { width: 100%; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding-bottom: 10px; scrollbar-width: thin; overscroll-behavior-x: contain; }
+  .app-shell .otb-filters > button { flex: 0 0 auto; white-space: nowrap; }
+  .app-shell .otb-zone { width: 100%; margin-top: 6px; gap: 10px; }
+  .app-shell .otb-zone > span { display: inline; }
+  .app-shell .otb-zone select { flex: 1; }
+  .app-shell .otb-support-call > div { flex-basis: 160px; }
+  .app-shell .otb-order-list { max-height: min(65dvh, 580px); }
+  .app-shell .otb-history-toggle > span { flex-wrap: wrap; }
+  .app-shell .otb-order { padding: 14px 12px; }
+  .app-shell .otb-order-heading { flex-wrap: wrap; gap: 10px; }
+  .app-shell .rev-card { padding: 16px; }
+  .app-shell .rev-metric { padding: 16px; }
+  .app-shell .rev-metrics { gap: 12px; }
+  .app-shell .rev-metric > strong { font-size: max(23px, calc(28px * var(--moc-font-scale, 1))); }
+  .app-shell .rev-range-form { padding: 16px; gap: 12px; }
+  .app-shell .rev-presets { padding: 14px 14px 0; gap: 7px; }
+  .app-shell .rev-presets button { font-size: var(--moc-ui-small); padding: 8px 12px; }
+  .app-shell .rev-order-filters { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .rev-small-stats { padding: 16px; gap: 14px; }
+  .app-shell .rev-chart-detail { padding: 12px; gap: 10px; }
+  .app-shell .rev-chart-detail > strong { padding-right: 0; }
+  .app-shell .rev-chart-slider { flex-wrap: wrap; gap: 8px; }
+  .app-shell .rev-chart-slider input { min-height: 44px; flex-basis: 100%; order: 3; }
+  .app-shell .rev-segment { flex-wrap: wrap; }
+  .app-shell .rev-chart-legend { flex-wrap: wrap; gap: 10px; }
+  .app-shell .sth-summary { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .sth-summary > div { padding: 12px 0; }
+  .app-shell .sth-summary > div > strong { font-size: max(24px, calc(30px * var(--moc-font-scale, 1))); }
+  .app-shell .sth-visit-row { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px; gap: 14px; }
+  .app-shell .sth-visit-row > .sth-visit-customer { grid-column: 1 / -1; }
+  .app-shell .sth-visit-row > .sth-visit-total { grid-column: 1 / -1; }
+  .app-shell .sth-visit-row > .sth-expand { grid-column: 1 / -1; justify-content: center; }
+  .app-shell .sth-detail-order { padding: 14px; }
+  .app-shell .sth-detail-order > .secondary { width: 100%; }
+  .app-shell .sth-details { padding: 14px; }
+  .app-shell .sth-pagination > div { width: 100%; justify-content: space-between; }
+  .app-shell .rev-pagination > div { width: 100%; justify-content: space-between; }
+  .app-shell .manage-menu-row { grid-template-columns: calc(84px * var(--moc-food-image-scale, 1)) minmax(0, 1fr) 44px; gap: 10px; padding: 14px; }
+  .app-shell .manage-menu-row > img { width: calc(84px * var(--moc-food-image-scale, 1)); height: calc(84px * var(--moc-food-image-scale, 1)); }
+  .app-shell .manage-menu-name { grid-column: 2 / -1; }
+  .app-shell .manage-menu-row > .icon-btn { width: 44px; height: 44px; }
+  .app-shell .manage-menu-row .availability { grid-column: 1 / 3; }
+  .app-shell :is(.settings-form, .settings-guide) { padding: 20px; }
+  .app-shell .form-two { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .table-opening-queue { padding: 16px; }
+  .app-shell .table-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .table-opening-row { padding: 14px; }
+  .app-shell .table-opening-actions { width: 100%; }
+  .app-shell .table-opening-actions > button { flex: 1 1 130px; }
+
+  .app-shell[data-view] .modal { width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; margin: 0; inset: 0; border-radius: 0; border-width: 0; overflow-x: hidden; overflow-y: auto; }
+  .app-shell .modal-header { padding: calc(12px + env(safe-area-inset-top)) 14px 12px; }
+  .app-shell .modal > :last-child { padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .app-shell .modal:has(> .item-detail)[open] { overflow: hidden; }
+  .app-shell .item-detail { padding: 0 16px 18px; }
+  .app-shell .detail-photo { height: calc(225px * var(--moc-food-image-scale, 1)); max-height: 40dvh; width: calc(100% + 32px); margin-left: -16px; }
+  .app-shell .detail-intro { padding: 18px 0 14px; }
+  .app-shell .detail-bottom { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); }
+  .app-shell .detail-bottom .stepper button { width: 44px; height: 48px; }
+  .app-shell .detail-bottom .stepper strong { min-width: 32px; }
+  .app-shell .detail-bottom > .primary { min-width: 0; padding: 10px; gap: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: max(16px, calc(18px * var(--moc-font-scale, 1))); }
+  .app-shell .detail-bottom > .primary strong { font-size: max(17px, calc(20px * var(--moc-font-scale, 1))); }
+  .app-shell .modal .compact { padding: 16px; }
+  .app-shell .compact .cart-line > img { width: calc(80px * var(--moc-food-image-scale, 1)); height: calc(88px * var(--moc-food-image-scale, 1)); }
+  .app-shell .compact .cart-line-content > strong, .app-shell .compact .cart-line-bottom > b { font-size: var(--moc-ui-body); }
+  .app-shell .compact .cart-line-content > small { font-size: var(--moc-ui-small); }
+  .app-shell .compact .cart-total strong { font-size: max(24px, calc(32px * var(--moc-font-scale, 1))); }
+  .app-shell :is(.form-body, .help-body, .success-body, .connection-body, .otb-close-body, .table-close-body, .tp-body, .tt-body) { padding: 18px 16px; }
+  .app-shell :is(.tp-header, .tt-header) { padding: calc(14px + env(safe-area-inset-top)) 16px 14px; gap: 12px; }
+  .app-shell :is(.tp-totals, .tp-methods, .tt-destinations, .otb-close-summary) { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .tp-totals { gap: 10px; }
+  .app-shell .tp-totals > div { padding: 16px; }
+  .app-shell .tp-totals > div > strong { font-size: max(25px, calc(32px * var(--moc-font-scale, 1))); }
+  .app-shell .tp-totals > .remaining > strong { font-size: max(28px, calc(36px * var(--moc-font-scale, 1))); }
+  .app-shell .tp-orders > article { padding: 14px; gap: 10px; flex-wrap: wrap; }
+  .app-shell .tp-methods > label { flex-direction: row; padding: 14px; gap: 12px; }
+  .app-shell :is(.tp-list-heading, .tt-list-heading) { flex-wrap: wrap; gap: 8px; }
+  .app-shell :is(.tp-list-heading > button, .tt-list-heading > button) { padding: 8px 10px; }
+  .app-shell .tt-route { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; }
+  .app-shell .tt-route > div { padding: 12px 10px; }
+  .app-shell .tt-route > svg { width: 20px; }
+  .app-shell .tt-route strong { font-size: max(22px, calc(28px * var(--moc-font-scale, 1))); }
+  .app-shell .tt-route :is(span, small) { font-size: var(--moc-ui-small); }
+  .app-shell .tt-destinations > label { padding: 16px 44px 16px 14px; }
+  .app-shell .tt-destinations strong { font-size: var(--moc-ui-label); }
+  .app-shell .tt-destinations small { font-size: var(--moc-ui-small); }
+  .app-shell :is(.tp-footer, .tt-footer, .otb-close-actions, .table-close-actions) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .app-shell :is(.tp-footer > button, .tt-footer > button, .otb-close-actions > button, .table-close-actions > button) { width: 100%; }
+  .app-shell .admin-order-popup { top: calc(12px + env(safe-area-inset-top)); right: 12px; left: auto; bottom: auto; width: calc(100% - 24px); margin: 0; padding: 18px 58px 18px 16px; gap: 12px; }
+  .app-shell .admin-order-popup-icon { width: 36px; height: 36px; }
+  .app-shell .admin-order-popup-close { top: 7px; right: 7px; }
+}
+
+@media screen and (max-width: 560px) {
+  .app-shell .food-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .rev-metrics { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .rev-range-form { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .rev-range-form .primary { width: 100%; }
+  .app-shell .rev-metric > strong { font-size: max(26px, calc(34px * var(--moc-font-scale, 1))); }
+  .app-shell .hero-copy { padding: 16px; }
+}
+
+@media screen and (max-width: 380px) {
+  .app-shell .site-header { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .app-shell .header-actions { max-width: none; width: 100%; justify-content: space-between; }
+  .app-shell .header-actions .table-pill { flex: 1; max-width: none; }
+  .app-shell .hero { grid-template-columns: minmax(0, 1fr) minmax(0, .48fr); }
+  .app-shell .hero h1 { font-size: max(24px, calc(29px * var(--moc-font-scale, 1))); }
+  .app-shell .hero-copy { padding: 14px; }
+  .app-shell .hero-copy p { font-size: max(13px, calc(14px * var(--moc-font-scale, 1))); }
+  .app-shell .otb-card-totals { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .otb-card-totals > span { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; }
+  .app-shell .otb-card-totals strong { margin: 0; }
+  .app-shell .rev-small-stats { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .tt-route { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .tt-route > svg { transform: rotate(90deg); justify-self: center; }
+  .app-shell .detail-bottom { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .detail-bottom .stepper { justify-self: center; }
+  .app-shell .detail-bottom > .primary { flex-direction: row; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+}
+
+@media screen {
+  .app-shell .admin-tools { min-width: 0; }
+  .app-shell .admin-account-link { white-space: normal; max-width: min(100%, 280px); text-align: left; }
+  .app-shell .admin-account-link span { min-width: 0; overflow-wrap: anywhere; }
+  .app-shell .connection-error > .secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
+}
+
+/* Avoid serif fallback and compressed Vietnamese diacritics in report headings. */
+.app-shell .rev-heading h2 {font-family:Arial,"Segoe UI",system-ui,sans-serif;font-weight:700;line-height:1.5;letter-spacing:0;word-spacing:normal;overflow-wrap:normal;word-break:normal;}
+.app-shell .rev-heading-actions {flex-wrap:wrap;min-width:0;max-width:100%;align-items:stretch;}
+.app-shell .rev-heading-actions > button {display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;min-width:0;height:auto;white-space:normal;line-height:1.5;padding:12px 16px;}
+.app-shell .admin-voice-picker {display:grid;gap:8px;width:100%;min-width:0;flex-basis:100%;font-size:var(--moc-ui-small,16px);line-height:1.6;}
+.app-shell .admin-voice-picker select {width:100%;max-width:100%;min-width:0;min-height:48px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:#172b22;font-size:inherit;}
+.app-shell .admin-voice-picker small {font-size:inherit;overflow-wrap:anywhere;}
+@media screen and (max-width:760px) {
+ .app-shell .rev-heading-actions {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:12px;}
+ .app-shell .rev-heading-actions > button {width:100%;margin:0;font-size:var(--moc-ui-body,18px);}
+ .app-shell .admin-tabs {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible;margin:0 0 20px;padding:4px;gap:10px;}
+ .app-shell .admin-tabs > button {display:flex;align-items:center;justify-content:center;white-space:normal;min-width:0;width:100%;height:auto;line-height:1.5;padding:12px 10px;}
+ .app-shell .admin-audio-strip {flex-wrap:wrap;gap:10px;}
+ .app-shell .admin-audio-strip > span {flex-basis:100%;min-width:0;}
+ .app-shell .admin-audio-strip > button {flex:1 1 140px;min-height:48px;white-space:normal;}
+}
+@media screen and (max-width:420px) {
+ .app-shell .rev-heading-actions {grid-template-columns:minmax(0,1fr);}
+}
+
+/* Compact administration controls: 120% navigation and paired date fields. */
+@media screen {
+ .app-shell .admin-tabs > button {font-size:calc(var(--moc-ui-body,24px) * 1.2);min-height:58px;padding:14.4px 19.2px;line-height:1.5;}
+ .app-shell .admin-tabs > button > svg {width:22px;height:22px;}
+}
+@media screen and (max-width:760px) {
+ .app-shell .admin-tabs > button {font-size:calc(var(--moc-ui-small,16px) * 1.2);padding:14.4px 12px;gap:8px;}
+ .app-shell .rev-range-form {grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+ .app-shell .rev-range-form > label:nth-child(1) {grid-column:1;}
+ .app-shell .rev-range-form > label:nth-child(2) {grid-column:2;}
+ .app-shell .rev-range-form > :is(.rev-table-select,button) {grid-column:1/-1;width:100%;}
+ .app-shell .rev-range-form input[type="date"] {box-sizing:border-box;width:100%;min-width:0;max-width:100%;padding:10px 8px;font-size:max(16px,calc(16px * var(--moc-font-scale,1)));min-height:48px;}
+ .app-shell .rev-range-form input[type="date"]::-webkit-date-and-time-value {min-width:0;text-align:left;}
+}

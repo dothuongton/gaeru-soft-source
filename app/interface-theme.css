@@ -1,0 +1,104 @@
+/* Shared brand tokens. Inline values on the root contain only validated hex colours. */
+:root {
+  --moc-accent: #244f3c;
+  --moc-accent-text: #244f3c;
+  --moc-text: #27382e;
+  --moc-on-accent: #ffffff;
+  --moc-accent-dark: color-mix(in srgb, var(--moc-accent) 82%, #000);
+  --moc-surface: #fff;
+  --moc-surface-soft: color-mix(in srgb, var(--moc-accent) 5%, #fff);
+  --moc-surface-tint: color-mix(in srgb, var(--moc-accent) 10%, #fff);
+  --moc-surface-strong: color-mix(in srgb, var(--moc-accent) 18%, #fff);
+  --moc-muted: var(--muted);
+  --moc-line: var(--line);
+  --moc-accent-soft: var(--moc-surface-tint);
+  --moc-button-radius: 16px;
+  --moc-control-shadow: 0 2px 0 color-mix(in srgb, var(--moc-text) 12%, transparent), 0 5px 14px color-mix(in srgb, var(--moc-text) 7%, transparent);
+}
+
+/* Raised, rounded controls remain distinct from the cards containing them. */
+.app-shell :is(button, a.primary, a.secondary) {
+  border-radius: var(--moc-button-radius);
+  min-height: 44px;
+  box-shadow: var(--moc-control-shadow);
+  border: 1px solid var(--line);
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.app-shell :is(button, a.primary, a.secondary):hover:not(:disabled) {
+  border-color: var(--moc-accent-text);
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--moc-text) 14%, transparent), 0 7px 18px color-mix(in srgb, var(--moc-text) 11%, transparent);
+}
+.app-shell :is(button, a.primary, a.secondary):active:not(:disabled) {
+  box-shadow: inset 0 2px 4px color-mix(in srgb, var(--moc-text) 16%, transparent);
+}
+.app-shell button:disabled {box-shadow: none;}
+.app-shell :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--moc-accent-text);
+  outline-offset: 3px;
+}
+.app-shell button.brand-button {border: 0;box-shadow: none;background: transparent;border-radius: 14px;}
+.app-shell :is(.icon-btn,.admin-order-popup-close,.quantity-control>button,.cart-quantity>button,.dsp-popup>button) {
+  border-radius: 50%;
+}
+.app-shell :is(.primary,.hero-copy button,.tp-primary,.tt-primary,.otb-table-pay,.dsp-save,.tsp-save) {
+  color: var(--moc-on-accent);
+  background: var(--green);
+  border-color: var(--green);
+  font-weight: 650;
+  box-shadow: 0 3px 0 var(--moc-accent-dark), 0 7px 16px color-mix(in srgb, var(--moc-accent) 24%, transparent);
+}
+.app-shell :is(.primary,.hero-copy button,.tp-primary,.tt-primary,.otb-table-pay,.dsp-save,.tsp-save):hover:not(:disabled) {
+  background: var(--green);
+  color: var(--moc-on-accent);
+  box-shadow: 0 3px 0 var(--moc-accent-dark), 0 9px 22px color-mix(in srgb, var(--moc-accent) 32%, transparent);
+}
+.app-shell :is(.secondary,.call-top,.otb-transfer-button,.dsp-secondary,.dsp-test,.tp-secondary,.tt-secondary) {
+  background: var(--moc-surface);
+  color: var(--ink);
+}
+.app-shell .danger-button {border-color: #a54335;color: #fff;}
+.app-shell .danger-button:hover:not(:disabled) {border-color: #89392f;}
+
+/* Foreground on brand fills is chosen from black/white for the saved accent. */
+.app-shell :is(.brand-mark,.top-nav b,.admin-tabs b,.toast,.mobile-cart-bar,.category-sidebar nav button.selected,.mobile-categories button.selected,.otb-filters>button.selected,.table-opening-heading h2>span,.order-progress .done>span) {
+  color: var(--moc-on-accent);
+}
+.app-shell :is(.mobile-cart-bar,.toast,.category-sidebar nav button.selected,.mobile-categories button.selected,.otb-filters>button.selected) :is(span,strong,b,small,svg) {
+  color: inherit;
+}
+.app-shell .add-button:hover:not(:disabled) {color: var(--moc-on-accent);}
+.app-shell .otb-filters>button.selected>span {
+  background: color-mix(in srgb, var(--moc-on-accent) 16%, transparent);
+}
+.app-shell :is(.rev-metric.primary-metric,.tp-totals>div.remaining,.stat-grid>div:first-child,.dsp-popup) {
+  color: var(--moc-on-accent);
+}
+.app-shell :is(.rev-metric.primary-metric,.tp-totals>div.remaining,.stat-grid>div:first-child,.dsp-popup) :is(span,strong,small,p,b,svg,button) {
+  color: var(--moc-on-accent);
+}
+.app-shell .dsp-popup-progress {background: var(--moc-on-accent);}
+.app-shell .mobile-cart-bar {border-color: var(--green);}
+.app-shell .mobile-cart-bar>b {background: color-mix(in srgb, var(--moc-on-accent) 17%, transparent);}
+.app-shell :is(.category-sidebar nav button.selected,.mobile-categories button.selected,.otb-filters>button.selected,.admin-tabs>button.selected) {border-color: var(--moc-accent-text);}
+.admin-sound-indicator {display: inline-flex;align-items: center;gap: 9px;}
+.admin-sound-indicator>i {width: 9px;height: 9px;border-radius: 50%;background: #2f864f;box-shadow: 0 0 0 4px #2f864f16;flex-shrink: 0;}
+.admin-sound-indicator.needs-gesture>i {background: #ad6b21;box-shadow: 0 0 0 4px #ad6b2116;}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell :is(button, a.primary, a.secondary) {transition: none;}
+}
+
+/* Soft controls with a stable dark foreground, including very light brand colours. */
+.app-shell :is(button,a.primary,a.secondary) {font-weight:600;line-height:1.5;letter-spacing:normal;}
+.app-shell :is(h1,h2,h3,h4) {font-family:var(--sans);font-weight:700;line-height:1.35;letter-spacing:normal;}
+.app-shell :is(.primary,.hero-copy button,.tp-primary,.tt-primary,.otb-table-pay,.dsp-save,.tsp-save,.sa-primary,.mobile-cart-bar,.category-sidebar nav button.selected,.mobile-categories button.selected,.otb-filters>button.selected),
+.app-shell :is(.primary,.hero-copy button,.tp-primary,.tt-primary,.otb-table-pay,.dsp-save,.tsp-save,.sa-primary,.mobile-cart-bar,.category-sidebar nav button.selected,.mobile-categories button.selected,.otb-filters>button.selected):hover:not(:disabled) {
+ background:color-mix(in srgb,var(--moc-accent) 16%,white);color:#172b22;
+ border:1px solid color-mix(in srgb,var(--moc-accent) 40%,white);
+ box-shadow:0 2px 0 #172b2220,0 4px 12px #172b2210;
+}
+.app-shell :is(.danger-button,.sa-suspend) {background:#fff0ed;color:#852a20;border-color:#dba89f;}
+.app-shell .toast {background:#edf5ef;color:#173b27;border:1px solid #adc8b5;font-weight:600;line-height:1.6;}
+.app-shell .toast button {color:inherit;}
+.app-shell :is(input,select,textarea) {line-height:1.5;}
+.app-shell :is(button,a.primary,a.secondary):disabled {opacity:.65;}
