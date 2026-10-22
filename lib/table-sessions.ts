@@ -1,6 +1,8 @@
 import {database,deviceIdentity} from "./server";
 import {checkedText,OrderError} from "./menu";
 import {settlementInsertStatement} from "./settlement-server";
+import {getTrustedClientIp,checkRateLimit} from "./auth";
+import {sha256Hex} from "./auth-crypto";
 import type {DiningTable} from "./menu";
 
 export type TableSessionStatus="pending"|"active"|"closed"|"rejected";
@@ -79,6 +81,14 @@ export async function requestTableSession(request:Request,table:DiningTable,rawN
  const current=await getConnection(table,hash);
  if(current.state==="pending"||current.state==="active")return {connection:current,created:false};
  if(current.state==="blocked")throw new OrderError(current.message??occupiedMessage,409);
+
+ const clientIp = getTrustedClientIp(request);
+ const ipHash = (await sha256Hex(clientIp)).slice(0, 16);
+ const ipLimit = await checkRateLimit("session_ip:" + ipHash, 30, 600_000, 600_000);
+ if (!ipLimit.allowed) {
+  throw new OrderError("Quá nhiều yêu cầu mở bàn từ mạng này. Vui lòng liên hệ nhân viên hoặc thử lại sau ít phút.", 429);
+ }
+
  const id=crypto.randomUUID(),now=Date.now();
  // A partial unique index is the final authority if two different browsers race this insert.
  const inserted=await db.prepare("INSERT OR IGNORE INTO table_sessions (id,table_id,table_name,browser_hash,customer_name,status,created_at,updated_at,closed_at) SELECT ?,?,?,?,?, 'pending',?,?,NULL WHERE EXISTS (SELECT 1 FROM dining_tables WHERE id = ? AND token = ?) AND NOT EXISTS (SELECT 1 FROM table_sessions WHERE table_id = ? AND status IN ('pending','active')) AND NOT EXISTS (SELECT 1 FROM orders WHERE table_id = ? AND dining_session_id IS NULL AND status != 'cancelled' AND (paid = 0 OR status != 'served')) AND (SELECT COUNT(*) FROM table_sessions WHERE browser_hash = ? AND created_at > ?) < 6").bind(id,table.id,table.name,hash,customerName,now,now,table.id,table.token,table.id,table.id,hash,now-600000).run();

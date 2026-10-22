@@ -429,7 +429,7 @@ async function handle(request:Request){
     return json({ok:true});
    }
    if(path==="auth/bootstrap"&&request.method==="POST"){
-    const b=await readBody(request) as {setupToken?:unknown;email?:unknown;displayName?:unknown;password?:unknown;forceReset?:unknown};
+    const b=await readBody(request) as {setupToken?:unknown;email?:unknown;displayName?:unknown;password?:unknown};
     const result=await bootstrapOwner(request,b);
     const access=await resolveAccessSafe(result.cookie,result.identity);
     return json({ok:true,access},200,{"Set-Cookie":result.cookie});
@@ -465,8 +465,9 @@ async function handle(request:Request){
   let resp: Response;
   if(error instanceof OrderError) resp = json({error:error.message},error.status);
   else {
-   console.error("API error",error instanceof Error?error.message:"Unknown",error instanceof Error?error.stack:"");
-   resp = json({error:error instanceof Error?error.message:"Chưa kết nối được với hệ thống. Vui lòng thử lại."},500);
+   const correlationId = crypto.randomUUID().slice(0, 8);
+   console.error(`[API Error ${correlationId}]`, error instanceof Error ? error.message : "Unknown", error instanceof Error ? error.stack : "");
+   resp = json({error:"Chưa kết nối được với hệ thống. Vui lòng thử lại.", correlationId},500);
   }
   resp.headers.set("Server-Timing", `total;dur=${(tTotal - t0).toFixed(1)}`);
   return resp;

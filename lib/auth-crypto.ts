@@ -3,6 +3,10 @@ import { OrderError } from "./menu";
 
 export const DEFAULT_PBKDF2_ITERATIONS = 100_000;
 
+// Pre-computed PBKDF2 hash with 100,000 iterations to balance timing against non-existent accounts (P-08)
+export const DUMMY_PBKDF2_HASH =
+  "pbkdf2$100000$eHh4eHh4eHh4eHh4eHh4eA==$eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=";
+
 export function getPbkdf2Iterations(): number {
   if (env.PBKDF2_ITERATIONS) {
     const val = Number(env.PBKDF2_ITERATIONS);
