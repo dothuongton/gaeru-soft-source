@@ -1,0 +1,222 @@
+/* Staff workspace owns its viewport. Customer layout and branding tokens stay independent. */
+.app-shell[data-view="admin"]:has(.admin-workspace){position:fixed;inset:0;height:100dvh;overflow:hidden}
+.app-shell[data-view="admin"]:has(.admin-workspace)>.demo-strip,.app-shell[data-view="admin"]:has(.admin-workspace)>.site-header{display:none}
+.app-shell[data-view="admin"] .admin-workspace{--aw-ink:var(--moc-text,#27382e);--aw-accent:var(--moc-accent,#244f3c);--aw-bg:var(--moc-surface-soft,#f7f8f4);--aw-soft:var(--moc-surface-tint,#edf2e7);--aw-line:color-mix(in srgb,var(--aw-ink) 15%,white);--aw-muted:color-mix(in srgb,var(--aw-ink) 72%,white);width:100%;height:100%;min-height:0;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:74px minmax(0,1fr) calc(70px + env(safe-area-inset-bottom));grid-template-areas:"header" "content" "nav";background:var(--aw-bg);color:var(--aw-ink);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;isolation:isolate}
+.app-shell[data-view="admin"] .admin-workspace *{box-sizing:border-box}
+.app-shell[data-view="admin"] .admin-workspace :is(button,input,select,textarea){font:inherit}
+.app-shell[data-view="admin"] .admin-workspace :is(button,a){touch-action:manipulation}
+.app-shell[data-view="admin"] .admin-workspace button{min-height:44px}
+.app-shell[data-view="admin"] .admin-workspace :is(input,select,textarea){min-height:44px;font-size:16px;max-width:100%}
+.app-shell[data-view="admin"] .admin-workspace :is(svg){flex-shrink:0}
+.app-shell[data-view="admin"] .aw-header{grid-area:header;z-index:40;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top));height:100%;background:#fff;border-bottom:1px solid var(--aw-line);overflow:visible}
+.app-shell[data-view="admin"] .aw-brand{display:flex;gap:10px;align-items:center;min-width:0;padding:0;text-align:left;max-width:calc(100% - 135px)}
+.app-shell[data-view="admin"] .aw-logo{width:40px;height:40px;flex-shrink:0;display:grid;place-items:center;overflow:hidden;background:var(--aw-accent);color:var(--moc-on-accent,#fff);border-radius:10px 10px 10px 3px;font-size:21px;font-weight:650}
+.app-shell[data-view="admin"] .aw-logo img{width:100%;height:100%;object-fit:cover}
+.app-shell[data-view="admin"] .aw-brand>span:last-child{min-width:0}
+.app-shell[data-view="admin"] .aw-brand strong{display:block;font-size:18px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell[data-view="admin"] .aw-brand small{display:block;font-size:11px;color:var(--aw-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.app-shell[data-view="admin"] .aw-header-actions{display:flex;gap:2px;flex-shrink:0}
+.app-shell[data-view="admin"] .aw-icon{display:inline-flex;align-items:center;justify-content:center;position:relative;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:1px solid var(--aw-line);border-radius:10px;background:#fff;color:var(--aw-accent);flex-shrink:0}
+.app-shell[data-view="admin"] .aw-header-actions .aw-icon{border-color:transparent;width:40px;min-width:40px}
+.app-shell[data-view="admin"] .aw-icon[aria-pressed="true"]{background:var(--aw-soft)}
+.app-shell[data-view="admin"] .aw-dot{position:absolute;right:7px;top:7px;width:6px;height:6px;background:#a57331;border-radius:50%}
+.app-shell[data-view="admin"] .aw-nav{grid-area:nav;display:flex;align-items:stretch;justify-content:space-around;padding:6px 8px max(8px,env(safe-area-inset-bottom));border-top:1px solid var(--aw-line);background:#fff;z-index:30;min-height:0;overflow:hidden}
+.app-shell[data-view="admin"] .aw-nav>button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border-radius:10px;padding:5px 3px;color:var(--aw-muted);font-size:11px;line-height:1.2}
+.app-shell[data-view="admin"] .aw-nav>button>span:first-child{position:relative;display:flex;align-items:center}
+.app-shell[data-view="admin"] .aw-nav>button b{position:absolute;left:15px;top:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:10px;font-size:10px;line-height:15px;background:var(--aw-accent);color:#fff;font-variant-numeric:tabular-nums}
+.app-shell[data-view="admin"] .aw-nav>button.active{color:var(--aw-accent);font-weight:650;background:var(--aw-soft)}
+.app-shell[data-view="admin"] .aw-content{grid-area:content;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding:22px 16px 28px;-webkit-overflow-scrolling:touch;overflow-anchor:none}
+.app-shell[data-view="admin"] .aw-content :is(h1,h2,h3,p){margin-top:0}
+.app-shell[data-view="admin"] .aw-content :is(p,small,time){font-size:13px;line-height:1.6}
+.app-shell[data-view="admin"] .aw-content :is(h1,h2,h3){font-family:inherit;line-height:1.3;overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .aw-content h1{font-size:25px}.app-shell[data-view="admin"] .aw-content h2{font-size:22px}.app-shell[data-view="admin"] .aw-content h3{font-size:18px}
+.app-shell[data-view="admin"] .aw-content :is(.primary,.secondary,.danger-button){font-size:14px;line-height:1.4;padding:10px 13px;min-height:44px;max-width:100%;border-radius:10px}
+.app-shell[data-view="admin"] .aw-content .section-heading{gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.app-shell[data-view="admin"] .aw-content .section-heading p{font-size:13px;line-height:1.6}
+.app-shell[data-view="admin"] .aw-content .section-heading h2{font-size:22px}
+.app-shell[data-view="admin"] .aw-page-title{margin:0 0 22px}
+.app-shell[data-view="admin"] .aw-back{display:flex;align-items:center;gap:9px;margin-bottom:20px}
+.app-shell[data-view="admin"] .aw-back h1{margin:0;font-size:24px}
+.app-shell[data-view="admin"] .aw-back .aw-icon{border-color:transparent;background:transparent}
+.app-shell[data-view="admin"] .aw-overview{padding:17px 15px;border:1px solid var(--aw-line);border-radius:14px;background:#fff;margin-bottom:22px}
+.app-shell[data-view="admin"] .aw-overview>button{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;min-height:32px;padding:0;gap:8px}
+.app-shell[data-view="admin"] .aw-overview>button strong{display:flex;align-items:center;gap:7px;font-size:15px}
+.app-shell[data-view="admin"] .aw-overview>small{display:block;font-size:11px;color:var(--aw-muted);margin:4px 0 18px}
+.app-shell[data-view="admin"] .aw-overview>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));text-align:center;gap:7px;font-variant-numeric:tabular-nums}
+.app-shell[data-view="admin"] .aw-overview>div b{display:block;font-size:20px;line-height:1.3;overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .aw-overview>div small{display:block;font-size:11px;color:var(--aw-muted);margin-top:5px}
+.app-shell[data-view="admin"] .aw-settings-list{display:grid;gap:10px}
+.app-shell[data-view="admin"] .aw-settings-list>button{min-width:0;display:flex;align-items:center;gap:12px;text-align:left;min-height:76px;padding:15px;background:#fff;border:1px solid var(--aw-line);border-radius:12px}
+.app-shell[data-view="admin"] .aw-settings-list>button>span:nth-child(2){flex:1;min-width:0}
+.app-shell[data-view="admin"] .aw-settings-list strong{display:block;font-size:15px}
+.app-shell[data-view="admin"] .aw-settings-list small{display:block;color:var(--aw-muted);font-size:11px;margin-top:3px}
+.app-shell[data-view="admin"] .aw-setting-icon{width:36px;height:36px;display:grid;place-items:center;background:var(--aw-soft);color:var(--aw-accent);border-radius:10px;flex-shrink:0}
+.app-shell[data-view="admin"] .aw-board-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 20px}
+.app-shell[data-view="admin"] .aw-board-heading h2{font-size:25px;line-height:1.3;letter-spacing:-.5px;margin:0;color:var(--aw-ink)}
+.app-shell[data-view="admin"] .aw-view-toggle{display:flex;gap:2px;padding:3px;background:var(--aw-soft);border-radius:9px;flex-shrink:0}
+.app-shell[data-view="admin"] .aw-view-toggle>button{min-height:40px;width:40px;padding:0;display:grid;place-items:center;border-radius:7px;color:var(--aw-muted)}
+.app-shell[data-view="admin"] .aw-view-toggle>button[aria-pressed="true"]{background:#fff;color:var(--aw-accent);box-shadow:0 1px 3px #27382e12}
+.app-shell[data-view="admin"] .table-matrix{padding:0;margin:0;border:0;background:none;border-radius:0;box-shadow:none}
+.app-shell[data-view="admin"] .table-matrix-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:0 0 16px;padding:0;overflow:visible}
+.app-shell[data-view="admin"] .table-matrix-filter{display:flex;flex-direction:column-reverse;justify-content:center;align-items:center;gap:4px;min-height:76px;min-width:0;padding:9px 5px;background:#fff;border:1px solid var(--aw-line);border-radius:10px;font-size:12px;line-height:16px;text-align:center;white-space:normal;color:var(--aw-ink)}
+.app-shell[data-view="admin"] .table-matrix-filter>.table-matrix-dot{display:none}
+.app-shell[data-view="admin"] .table-matrix-filter strong{font-size:18px;line-height:20px;min-width:0;background:none;padding:0;color:inherit}
+.app-shell[data-view="admin"] .table-matrix-filter[aria-pressed="true"]{background:var(--aw-accent);border-color:var(--aw-accent);color:var(--moc-on-accent,#fff)}
+.app-shell[data-view="admin"] .table-matrix-filter[aria-pressed="true"] strong{color:inherit}
+.app-shell[data-view="admin"] .aw-board-meta{display:flex;gap:10px;justify-content:space-between;align-items:center;margin:0 0 12px;font-size:12px;color:var(--aw-muted);min-height:24px}
+.app-shell[data-view="admin"] .aw-table-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
+.app-shell[data-view="admin"] .aw-table-tile{min-width:0;height:184px;padding:15px;background:#fff;border:1px solid var(--aw-line);border-radius:15px;display:flex;flex-direction:column;overflow:hidden}
+.app-shell[data-view="admin"] .aw-table-tile.needs-action{border-color:color-mix(in srgb,var(--aw-accent) 27%,white)}
+.app-shell[data-view="admin"] .aw-table-tile h3{font-size:21px;margin:0;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:27px}
+.app-shell[data-view="admin"] .aw-table-state{font-size:12px;color:var(--aw-muted);margin-top:7px;line-height:1.3}
+.app-shell[data-view="admin"] .aw-table-alert{font-size:11px;line-height:1.4;color:#866224;margin-top:7px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.app-shell[data-view="admin"] .aw-table-tile.free .aw-table-alert{color:var(--aw-muted)}
+.app-shell[data-view="admin"] .aw-table-actions{display:flex;gap:7px;margin-top:auto;align-items:center;justify-content:flex-end}
+.app-shell[data-view="admin"] .aw-table-actions .primary{flex:1;min-width:0;font-size:12px;padding:9px 4px;white-space:normal;margin:0}
+.app-shell[data-view="admin"] .aw-table-actions .aw-icon{background:var(--aw-bg)}
+.app-shell[data-view="admin"] .aw-table-grid.is-list{grid-template-columns:1fr}
+.app-shell[data-view="admin"] .aw-table-grid.is-list .aw-table-tile{height:112px;display:grid;grid-template-columns:minmax(0,1fr) 126px;column-gap:12px;padding:13px 15px}
+.app-shell[data-view="admin"] .aw-table-grid.is-list .aw-table-tile h3{font-size:19px;grid-column:1}
+.app-shell[data-view="admin"] .aw-table-grid.is-list .aw-table-state,.app-shell[data-view="admin"] .aw-table-grid.is-list .aw-table-alert{grid-column:1;margin-top:3px}
+.app-shell[data-view="admin"] .aw-table-grid.is-list .aw-table-actions{grid-column:2;grid-row:1/4;margin:auto 0}
+.app-shell[data-view="admin"] .table-matrix-note{font-size:11px;margin-top:16px;color:var(--aw-muted)}
+.app-shell[data-view="admin"] .otb-zone{font-size:12px;margin-bottom:14px;flex-wrap:wrap}
+.app-shell[data-view="admin"] .otb-zone select{font-size:14px;min-height:44px;max-width:230px}
+.app-shell[data-view="admin"] .otb-filters{display:flex;gap:6px;flex-wrap:wrap}
+.app-shell[data-view="admin"] .otb-filters>button{font-size:13px;white-space:normal}
+.app-shell[data-view="admin"] .otb-filters>button>span{font-size:12px;line-height:20px;height:auto}
+.app-shell[data-view="admin"] .otb-grid{grid-template-columns:1fr;gap:14px}
+.app-shell[data-view="admin"] .otb-card{padding:16px}
+.app-shell[data-view="admin"] .otb-card-heading h3{font-size:23px}
+.app-shell[data-view="admin"] .otb-card :is(p,small,time){font-size:12px}
+.app-shell[data-view="admin"] .otb-card :is(.otb-new-badge,.otb-state-badge,.otb-customer>strong,.otb-latest p,.otb-no-orders p,.otb-pending-content>p,.otb-history-heading strong,.otb-order-heading strong,.otb-order-items,.otb-order-total,.otb-support-call){font-size:14px;line-height:1.6}
+.app-shell[data-view="admin"] .otb-card :is(.otb-card-totals>span,.otb-card-totals small,.otb-latest>span,.otb-history-heading span,.otb-order-heading time,.otb-close-note,.otb-history-toggle,.otb-history-toggle b){font-size:12px;line-height:1.5}
+.app-shell[data-view="admin"] .otb-card-totals strong{font-size:23px;line-height:1.3}
+.app-shell[data-view="admin"] .otb-card-controls{flex-wrap:wrap}
+.app-shell[data-view="admin"] .otb-card-controls>button,.app-shell[data-view="admin"] .otb-table-pay,.app-shell[data-view="admin"] .otb-order-actions>button{font-size:13px;min-height:44px;padding:10px}
+.app-shell[data-view="admin"] .otb-support-title strong{font-size:17px}
+.app-shell[data-view="admin"] .otb-order-items>div{font-size:14px;flex-wrap:wrap}
+.app-shell[data-view="admin"] .otb-order-items :is(b,strong){font-size:inherit}
+.app-shell[data-view="admin"] .otb-history{margin:14px -16px -16px}
+.app-shell[data-view="admin"] .otb-order-list{max-height:none;overflow:visible}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal{font:14px/1.5 system-ui,-apple-system,sans-serif;width:min(600px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:0;overflow:auto;overscroll-behavior:contain}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal :is(h1,h2,h3){font-family:inherit;font-size:22px;line-height:1.3}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal :is(p,small,span,label,button){font-size:14px;line-height:1.6}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal :is(input,select,textarea){font-size:16px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal .modal-header{padding:16px;align-items:center;gap:10px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal .form-body{padding:18px;gap:16px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal .form-body .field>span{font-size:14px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal :is(.primary,.secondary,.danger-button){min-height:44px;padding:10px 13px;font-size:14px;border-radius:10px}
+.app-shell[data-view="admin"] .admin-workspace dialog.otb-visit-popup[open]{inset:82px 8px 82px;width:calc(100vw - 16px);height:calc(100dvh - 164px);max-height:calc(100dvh - 164px);margin:0;display:flex;border-radius:14px;flex-direction:column;overflow:hidden}
+.app-shell[data-view="admin"] .admin-workspace .otb-visit-content{overflow:auto;min-height:0;flex:1;padding:16px;scrollbar-gutter:stable;overscroll-behavior:contain}
+.app-shell[data-view="admin"] .admin-workspace .otb-visit-content .otb-card{box-shadow:none;border:0;padding:0;overflow:visible}
+.app-shell[data-view="admin"] .admin-workspace .otb-visit-content .otb-history{margin:14px 0 0}
+.app-shell[data-view="admin"] .aw-qr-preview{display:grid;place-items:center;padding:20px;gap:16px}
+.app-shell[data-view="admin"] .aw-qr-preview>svg{width:220px;max-width:100%;height:auto}
+.app-shell[data-view="admin"] .table-grid{grid-template-columns:1fr;gap:14px}
+.app-shell[data-view="admin"] .table-session-card :is(strong,span,button,p){font-size:14px;line-height:1.5}
+.app-shell[data-view="admin"] .table-session-card .qr-card-head>strong{font-size:22px}
+.app-shell[data-view="admin"] .table-session-card .table-session-customer strong{font-size:17px}
+.app-shell[data-view="admin"] .table-session-qr-block .qr-image{display:none}
+.app-shell[data-view="admin"] .table-session-qr-block .qr-image:has(svg){display:flex}
+.app-shell[data-view="admin"] .manage-menu-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px}
+.app-shell[data-view="admin"] .manage-menu-row img{width:64px;height:64px;object-fit:cover;border-radius:9px}
+.app-shell[data-view="admin"] .manage-menu-name{flex:1;min-width:130px}
+.app-shell[data-view="admin"] .manage-menu-name strong{font-size:16px;line-height:1.4}
+.app-shell[data-view="admin"] .manage-menu-name span,.app-shell[data-view="admin"] .manage-price,.app-shell[data-view="admin"] .manage-price strong{font-size:14px}
+.app-shell[data-view="admin"] .manage-menu-row .availability{font-size:12px}
+.app-shell[data-view="admin"] .settings-layout{grid-template-columns:1fr}
+.app-shell[data-view="admin"] .settings-guide{display:none}
+.app-shell[data-view="admin"] .rev-heading h2{font-size:23px}
+.app-shell[data-view="admin"] .rev-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+.app-shell[data-view="admin"] .rev-metric{padding:16px}
+.app-shell[data-view="admin"] .rev-metric>strong{font-size:25px}
+.app-shell[data-view="admin"] .rev-metric-title{font-size:13px;gap:5px;flex-wrap:wrap}
+.app-shell[data-view="admin"] .rev-presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.app-shell[data-view="admin"] .rev-presets button{font-size:12px;padding:8px 5px}
+.app-shell[data-view="admin"] .rev-range-form{display:flex;flex-wrap:wrap;gap:12px}
+.app-shell[data-view="admin"] .rev-range-form>label{min-width:0;flex:1 1 130px;font-size:12px}
+.app-shell[data-view="admin"] .rev-range-form input,.app-shell[data-view="admin"] .rev-range-form select{width:100%;max-width:100%}
+@media(min-width:768px){
+ .app-shell[data-view="admin"] .admin-workspace{grid-template-columns:88px minmax(0,1fr);grid-template-rows:80px minmax(0,1fr);grid-template-areas:"header header" "nav content"}
+ .app-shell[data-view="admin"] .aw-header{padding:14px 24px}.app-shell[data-view="admin"] .aw-brand{max-width:calc(100% - 160px)}.app-shell[data-view="admin"] .aw-header-actions{gap:8px}
+ .app-shell[data-view="admin"] .aw-header-actions .aw-icon{width:44px;min-width:44px;border-color:var(--aw-line)}
+ .app-shell[data-view="admin"] .aw-nav{flex-direction:column;justify-content:flex-start;border-top:0;border-right:1px solid var(--aw-line);padding:18px 8px;gap:12px}
+ .app-shell[data-view="admin"] .aw-nav>button{flex:0 0 auto;min-height:72px;font-size:12px}
+ .app-shell[data-view="admin"] .aw-content{padding:26px 24px 32px}
+ .app-shell[data-view="admin"] .aw-table-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+ .app-shell[data-view="admin"] .aw-table-tile{height:196px;padding:17px}
+ .app-shell[data-view="admin"] .aw-settings-list,.app-shell[data-view="admin"] .table-grid,.app-shell[data-view="admin"] .otb-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .app-shell[data-view="admin"] .aw-overview{padding:22px}.app-shell[data-view="admin"] .aw-overview>div{max-width:650px;margin:auto}.app-shell[data-view="admin"] .aw-overview>div b{font-size:26px}
+ .app-shell[data-view="admin"] .aw-table-actions .primary{font-size:13px}
+ .app-shell[data-view="admin"] .admin-workspace dialog.otb-visit-popup[open]{inset:90px 12px 12px auto;width:410px;height:calc(100dvh - 102px);max-height:calc(100dvh - 102px);margin:0}
+}
+@media(min-width:1000px){.app-shell[data-view="admin"] .table-matrix-filters{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.app-shell[data-view="admin"] .aw-table-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.app-shell[data-view="admin"] .table-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:360px){.app-shell[data-view="admin"] .aw-content{padding:18px 10px 24px}.app-shell[data-view="admin"] .aw-header{padding:10px}.app-shell[data-view="admin"] .aw-brand{gap:7px}.app-shell[data-view="admin"] .aw-logo{width:34px;height:36px;font-size:18px}.app-shell[data-view="admin"] .aw-brand strong{font-size:16px}.app-shell[data-view="admin"] .table-matrix-filter{font-size:11px;min-height:76px}.app-shell[data-view="admin"] .aw-table-tile{padding:12px}.app-shell[data-view="admin"] .aw-table-actions{gap:5px}.app-shell[data-view="admin"] .aw-table-actions .primary{font-size:11px}.app-shell[data-view="admin"] .aw-table-grid{gap:9px}}
+@media print{.app-shell[data-view="admin"]:has(.admin-workspace){position:static;height:auto;overflow:visible}.app-shell[data-view="admin"] .admin-workspace{display:block;height:auto;overflow:visible}.app-shell[data-view="admin"] .aw-header,.app-shell[data-view="admin"] .aw-nav{display:none}.app-shell[data-view="admin"] .aw-content{overflow:visible;padding:0}.app-shell[data-view="admin"] .table-session-qr-block .qr-image{display:flex}}
+.app-shell[data-view="admin"] .admin-workspace button{box-shadow:none;transform:none;letter-spacing:normal}
+.app-shell[data-view="admin"] .admin-workspace .aw-header .aw-brand{background:transparent;border:0;border-radius:0;box-shadow:none}
+.app-shell[data-view="admin"] .aw-nav>button{background:transparent;border:0;box-shadow:none}
+.app-shell[data-view="admin"] .table-matrix-filter.selected{outline:0;box-shadow:none}
+.app-shell[data-view="admin"] .aw-managed-tables{display:grid;gap:10px}
+.app-shell[data-view="admin"] .aw-managed-table{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;background:#fff;border:1px solid var(--aw-line);border-radius:12px;min-width:0}
+.app-shell[data-view="admin"] .aw-managed-table>div:first-child{min-width:0;flex:1}
+.app-shell[data-view="admin"] .aw-managed-table strong{font-size:17px;display:block;overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .aw-managed-table small{font-size:11px;display:block;color:var(--aw-muted);margin-top:3px}
+.app-shell[data-view="admin"] .aw-managed-table>div:last-child{display:flex;gap:4px;flex-shrink:0}
+@media screen{.app-shell[data-view="admin"] .aw-print-tables{display:none}}
+@media(min-width:900px){.app-shell[data-view="admin"] .aw-managed-tables{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.app-shell[data-view="admin"] .aw-board-heading{flex-direction:row;align-items:center;text-align:left;flex-wrap:nowrap}
+.app-shell[data-view="admin"] .aw-board-heading>.aw-view-toggle{width:auto;max-width:none;flex:0 0 auto}
+.app-shell[data-view="admin"] .aw-board-heading h2{text-align:left;flex:1;min-width:0}
+body:has(.admin-workspace) .pwa-update-banner{width:min(480px,calc(100vw - 24px));border-radius:12px!important;bottom:calc(82px + env(safe-area-inset-bottom))!important;font:13px/1.5 system-ui,-apple-system,sans-serif!important;padding:12px!important;gap:8px!important}
+body:has(.admin-workspace) .pwa-update-banner>span{flex:1;min-width:0}
+body:has(.admin-workspace) .pwa-update-banner>button{flex-shrink:0;min-height:44px;white-space:nowrap}
+@media(min-width:768px){body:has(.admin-workspace) .pwa-update-banner{bottom:16px!important}}
+.app-shell[data-view="admin"] .table-session-overview{padding:12px;display:flex;gap:8px 14px;flex-wrap:wrap;margin-bottom:16px}
+.app-shell[data-view="admin"] .table-session-overview>span{font-size:12px;line-height:1.5;gap:5px}
+.app-shell[data-view="admin"] .table-session-overview>span strong{font-size:18px;line-height:1.2}
+.app-shell[data-view="admin"] .table-session-overview>p{display:none}
+.app-shell[data-view="admin"] .table-management-actions{display:flex;flex-wrap:wrap;gap:8px}
+.app-shell[data-view="admin"] .table-matrix-filter{flex-direction:column;flex-wrap:nowrap;height:80px;min-height:80px;align-self:stretch;white-space:normal}
+.app-shell[data-view="admin"] .table-matrix-filter .aw-filter-label{display:flex;align-items:center;justify-content:center;min-height:32px;max-width:100%;font-size:12px;line-height:16px}
+.app-shell[data-view="admin"] .table-matrix-filter.bill .aw-filter-label{max-width:75px}
+.app-shell[data-view="admin"] .revenue-panel .rev-heading>div:first-child{display:none}
+.app-shell[data-view="admin"] .revenue-panel .rev-heading{margin-bottom:14px}
+.app-shell[data-view="admin"] .rev-range-options{margin-top:12px}
+.app-shell[data-view="admin"] .rev-range-options>summary{display:flex;align-items:center;gap:7px;min-height:44px;font-size:13px;color:var(--aw-accent);cursor:pointer;list-style:none}
+.app-shell[data-view="admin"] .rev-range-options>summary:after{content:"⌄";margin-left:auto}
+.app-shell[data-view="admin"] .rev-range-options .rev-range-form{margin-top:12px}
+.app-shell[data-view="admin"] .rev-metric>strong{font-size:clamp(18px,5vw,25px);overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .admin-workspace{grid-template-rows:calc(74px + env(safe-area-inset-top)) minmax(0,1fr) calc(70px + env(safe-area-inset-bottom))}
+.app-shell[data-view="admin"] .aw-header{padding-top:calc(10px + env(safe-area-inset-top))}
+.app-shell[data-view="admin"] .admin-workspace dialog.otb-visit-popup[open]{top:calc(82px + env(safe-area-inset-top));bottom:calc(82px + env(safe-area-inset-bottom));height:calc(100dvh - 164px - env(safe-area-inset-top) - env(safe-area-inset-bottom));max-height:calc(100dvh - 164px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+@media(min-width:768px){.app-shell[data-view="admin"] .admin-workspace{grid-template-rows:calc(80px + env(safe-area-inset-top)) minmax(0,1fr)}.app-shell[data-view="admin"] .aw-header{padding-top:calc(14px + env(safe-area-inset-top))}.app-shell[data-view="admin"] .admin-workspace dialog.otb-visit-popup[open]{top:calc(90px + env(safe-area-inset-top));bottom:12px;height:calc(100dvh - 102px - env(safe-area-inset-top));max-height:calc(100dvh - 102px - env(safe-area-inset-top))}}
+.app-shell[data-view="admin"] .rev-heading-actions{display:flex;flex-direction:row;flex-wrap:nowrap;width:100%;gap:8px}
+.app-shell[data-view="admin"] .rev-heading-actions .rev-refresh{width:44px;min-width:44px;padding:0;flex:0 0 44px}
+.app-shell[data-view="admin"] .rev-heading-actions .rev-refresh span{display:none}
+.app-shell[data-view="admin"] .rev-heading-actions>.primary{flex:1;min-width:0;width:auto}
+.app-shell[data-view="admin"] .rev-active-range{padding:10px 0;gap:4px;margin-top:8px}
+.app-shell[data-view="admin"] .rev-active-range :is(span,strong){font-size:12px;line-height:1.5}
+.app-shell[data-view="admin"] .rev-active-range small{font-size:11px;line-height:1.4}
+.app-shell[data-view="admin"] .rev-report-status{font-size:11px;line-height:1.4;gap:4px;margin:12px 0}
+.app-shell[data-view="admin"] .rev-report-status span{font-size:11px;line-height:1.4}
+.app-shell[data-view="admin"] .admin-workspace .table-matrix-filter:focus-visible{outline:3px solid var(--aw-accent);outline-offset:3px}
+
+/* Keep the area selector between the table title and view controls. */
+.app-shell[data-view="admin"] .aw-table-heading h2{flex:0 0 auto;white-space:nowrap}
+.app-shell[data-view="admin"] .aw-table-heading>.otb-zone{display:flex;flex:1 1 180px;min-width:0;max-width:230px;margin:0 0 0 auto;flex-wrap:nowrap}
+.app-shell[data-view="admin"] .aw-table-heading>.otb-zone>span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.app-shell[data-view="admin"] .aw-table-heading>.otb-zone>select{width:100%;min-width:0;max-width:none;min-height:44px;font-size:13px;padding:8px 24px 8px 10px;text-overflow:ellipsis}
+@media(max-width:767px){
+ .app-shell[data-view="admin"] .aw-table-heading{gap:7px}
+ .app-shell[data-view="admin"] .aw-table-heading h2{font-size:22px;letter-spacing:-.6px}
+ .app-shell[data-view="admin"] .aw-table-heading .aw-view-toggle{padding:2px;gap:0}
+ .app-shell[data-view="admin"] .aw-table-heading .aw-view-toggle>button{width:34px;min-height:40px}
+}
+@media(max-width:360px){
+ .app-shell[data-view="admin"] .aw-table-heading{gap:5px}
+ .app-shell[data-view="admin"] .aw-table-heading h2{font-size:20px}
+ .app-shell[data-view="admin"] .aw-table-heading>.otb-zone>select{font-size:12px;padding-left:7px;padding-right:18px}
+ .app-shell[data-view="admin"] .aw-table-heading .aw-view-toggle>button{width:30px}
+}

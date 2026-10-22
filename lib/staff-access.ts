@@ -12,7 +12,7 @@ type AccountInput={name:string;role:StaffRole;permissions:Permission[];status:St
 type SqlGuard={sql:string;values:(string|number)[]};
 
 const emptyAccess=(identity?:Identity):StaffAccess=>({authenticated:!!identity,userId:identity?.userId??null,email:identity?.email??null,isStaff:false,isOwner:false,account:null,permissions:[]});
-const ownerEmails=()=>Array.from(new Set((env.STAFF_EMAILS??"").split(",").map(normalizeStaffEmail).filter((email):email is string=>!!email)));
+export const ownerEmails=()=>Array.from(new Set((env.STAFF_EMAILS??"").split(",").map(normalizeStaffEmail).filter((email):email is string=>!!email)));
 
 function identityFrom(request:Request):Identity|null{
  // These headers are supplied by the Sites authentication gateway, never by a

@@ -1,4 +1,4 @@
-import {inStore} from "@/lib/store-database";
+import {inStore, currentStoreId} from "@/lib/store-database";
 import {resolveStore,listStores,createStore,updateStoreStatus,saveStoreBranding} from "@/lib/store-platform";
 import {database,seed,deviceIdentity,getTable,getMenu,getShop,publicOrder,json,readBody} from "@/lib/server";
 import {getMenuConnection,requestTableSession,requireActiveSession,updateTableSession} from "@/lib/table-sessions";
@@ -14,6 +14,7 @@ import type {OrderStatus} from "@/lib/menu";
 import {getStaffAccess,updateOwnProfile,listStaffAccounts,createStaffAccount,updateStaffAccount} from "@/lib/staff-access";
 import {hasPermission,type Permission} from "@/lib/staff-permissions";
 import {adminDashboard} from "@/lib/admin-dashboard";
+import {getVapidConfig, subscribeStaffDevice, unsubscribeStaffDevice, getStaffSubscriptionStatus, dispatchStaffPush, sendTestPush} from "@/lib/staff-push";
 export const dynamic="force-dynamic";
 async function orderHash(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),byte=>byte.toString(16).padStart(2,"0")).join("");}
 async function matchesOrderHash(savedHash:unknown,currentHash:string,sessionId:string,body:Record<string,unknown>){
@@ -35,6 +36,12 @@ async function handleScoped(request:Request){
    if(path==="branding-icon"){const shop=await getShop();if(shop.logo){const binary=atob(shop.logo.split(",")[1]);return new Response(Uint8Array.from(binary,c=>c.charCodeAt(0)),{headers:{"Content-Type":"image/png","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});}return new Response(shopIconSvg(shop.name),{headers:{"Content-Type":"image/svg+xml","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});}
    if(path==="account")return json({access});
    if(path==="stores")return json(await listStores(request));
+   if(path==="admin/push/config")return json({enabled: getVapidConfig().enabled, vapidPublicKey: getVapidConfig().publicKey || null});
+   if(path==="admin/push/status"){
+    const deviceId = url.searchParams.get("deviceId") || "";
+    const userId = access?.userId || access?.email || "";
+    return json(await getStaffSubscriptionStatus({userId, deviceId}));
+   }
    if(path==="admin/accounts"){allow("staff.manage");return json(await listStaffAccounts(access!));}
    if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);return json({items,shop,table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings},200,device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
    if(path==="orders"){const {tableToken,sessionHint}=readQrEntry(url.searchParams),table=await getTable(tableToken),session=await requireActiveSession(request,table,sessionHint);const r=await db.prepare("SELECT * FROM orders WHERE client_token = ? AND table_id = ? AND dining_session_id = ? ORDER BY created_at DESC,id DESC").bind(session.browser_hash,table.id,session.id).all<Record<string,unknown>>();return json({orders:r.results.map(publicOrder)});}
@@ -53,8 +60,50 @@ async function handleScoped(request:Request){
   if(path==="platform/stores"&&request.method==="PATCH")return json(await updateStoreStatus(request,b));
   if(path==="admin/accounts"&&request.method==="POST"){allow("staff.manage");return json(await createStaffAccount(access!,b),201);}
   if(path==="admin/accounts"&&request.method==="PATCH"){allow("staff.manage");return json(await updateStaffAccount(access!,b));}
+  if(path==="admin/push/subscribe"&&request.method==="POST"){
+   const userId = access!.userId || access!.email;
+   if(!userId)throw new OrderError("Không xác định được danh tính nhân viên.",401);
+   const sub = b.subscription as {endpoint: string; keys: {p256dh: string; auth: string}} | undefined;
+   await subscribeStaffDevice({
+     userId,
+     staffAccountId: access!.account?.id ?? null,
+     deviceId: b.deviceId as string,
+     endpoint: sub?.endpoint as string,
+     p256dh: sub?.keys?.p256dh as string,
+     auth: sub?.keys?.auth as string,
+   });
+   return json({ok:true});
+  }
+  if(path==="admin/push/unsubscribe"&&request.method==="POST"){
+   const userId = access!.userId || access!.email;
+   if(!userId)throw new OrderError("Không xác định được danh tính nhân viên.",401);
+   await unsubscribeStaffDevice({
+     userId,
+     deviceId: b.deviceId as string,
+     endpoint: b.endpoint as string,
+   });
+   return json({ok:true});
+  }
+  if(path==="admin/push/test"&&request.method==="POST"){
+   const userId = access!.userId || access!.email;
+   if(!userId)throw new OrderError("Không xác định được danh tính nhân viên.",401);
+   const deviceId = (b.deviceId as string) || "";
+   const storeId = currentStoreId();
+   return json(await sendTestPush({userId, deviceId, storeId}));
+  }
   if(request.method==="POST"&&path==="table-session"){
    const table=await getTable(checkedText(b.tableToken,80,true)),result=await requestTableSession(request,table,b.customerName);
+   if(result.created){
+    dispatchStaffPush({
+      storeId: currentStoreId(),
+      requiredPermission: "tables.manage",
+      eventType: "table_opening",
+      eventTag: `${currentStoreId()}:table_opening:${result.connection.session?.id ?? Date.now()}`,
+      title: "Yêu cầu mở bàn mới",
+      body: `${table.name} — Yêu cầu mở bàn cần duyệt`,
+      url: "/?view=admin&tab=tables",
+    });
+   }
    return json({connection:result.connection},result.created?201:200);
   }
   if(request.method==="POST"&&path==="orders/cancel"){
@@ -84,10 +133,21 @@ async function handleScoped(request:Request){
    const recent=await db.prepare("SELECT COUNT(*) AS count FROM orders WHERE client_token = ? AND created_at > ?").bind(session.browser_hash,Date.now()-3600000).first<{count:number}>();
    if((recent?.count??0)>=20)throw new OrderError("Bạn đã gửi nhiều đơn. Vui lòng gọi nhân viên để được hỗ trợ.",429);
    const id=crypto.randomUUID(),now=Date.now(),code="M"+now.toString(36).slice(-3).toUpperCase()+id.slice(0,3).toUpperCase();
-   await db.prepare("INSERT OR IGNORE INTO orders (id,code,table_id,table_name,dining_session_id,customer_name,client_token,request_key,request_hash,items,total,note,status,paid,cancel_reason,created_at,updated_at) SELECT ?,?,?,?,s.id,s.customer_name,s.browser_hash,?,?,?,?,?,'new',0,'',?,? FROM table_sessions s WHERE s.id = ? AND s.table_id = ? AND s.browser_hash = ? AND s.status = 'active'").bind(id,code,table.id,table.name,key,hash,JSON.stringify(result.items),result.total,note,now,now,session.id,table.id,session.browser_hash).run();
+   const orderInsert=await db.prepare("INSERT OR IGNORE INTO orders (id,code,table_id,table_name,dining_session_id,customer_name,client_token,request_key,request_hash,items,total,note,status,paid,cancel_reason,created_at,updated_at) SELECT ?,?,?,?,s.id,s.customer_name,s.browser_hash,?,?,?,?,?,'new',0,'',?,? FROM table_sessions s WHERE s.id = ? AND s.table_id = ? AND s.browser_hash = ? AND s.status = 'active'").bind(id,code,table.id,table.name,key,hash,JSON.stringify(result.items),result.total,note,now,now,session.id,table.id,session.browser_hash).run();
    const saved=await db.prepare("SELECT * FROM orders WHERE request_key = ?").bind(key).first<Record<string,unknown>>();
    if(!saved)throw new OrderError("Lượt phục vụ đã kết thúc hoặc kết nối bàn vừa thay đổi. Vui lòng tải lại trang.",403);
    if(!await matchesOrderHash(saved.request_hash,hash,session.id,b))throw new OrderError("Nội dung đơn đã thay đổi. Vui lòng thử lại.",409);
+   if(orderInsert.meta.changes===1){
+    dispatchStaffPush({
+      storeId: currentStoreId(),
+      requiredPermission: "orders.view",
+      eventType: "order_new",
+      eventTag: `${currentStoreId()}:order_new:${id}`,
+      title: "Đơn gọi món mới",
+      body: `${table.name} — Đơn ${code}`,
+      url: "/?view=admin&tab=orders",
+    });
+   }
    return json({order:publicOrder(saved)},201);
   }
   if(request.method==="POST"&&path==="calls"){
@@ -96,6 +156,19 @@ async function handleScoped(request:Request){
    const called=await db.prepare("INSERT INTO service_requests (id,table_id,table_name,session_id,kind,status,created_at,note) SELECT ?,?,?,s.id,?,'open',?,? FROM table_sessions s WHERE s.id = ? AND s.table_id = ? AND s.browser_hash = ? AND s.status = 'active' ON CONFLICT(id) DO UPDATE SET status = excluded.status, note = excluded.note, table_name = excluded.table_name, created_at = MAX(service_requests.created_at + 1, excluded.created_at) WHERE service_requests.status = 'done'").bind(id,table.id,table.name,b.kind,Date.now(),requestNote,session.id,table.id,session.browser_hash).run();
    // A duplicate live call is successful, but a close that won the race must reject this action.
    if(called.meta.changes===0)await requireActiveSession(request,table,session.id);
+   else{
+    const currentReq=await db.prepare("SELECT created_at FROM service_requests WHERE id = ?").bind(id).first<{created_at:number}>();
+    const gen=currentReq?.created_at??Date.now();
+    dispatchStaffPush({
+      storeId: currentStoreId(),
+      requiredPermission: "tables.manage",
+      eventType: "service_request",
+      eventTag: `${currentStoreId()}:service_request:${session.id}:${b.kind}:${gen}`,
+      title: b.kind==="bill"?"Yêu cầu thanh toán":"Khách gọi nhân viên",
+      body: `${table.name} — ${b.kind==="bill"?"Khách yêu cầu hóa đơn":"Cần hỗ trợ tại bàn"}`,
+      url: "/?view=admin&tab=tables",
+    });
+   }
    return json({ok:true});
   }
   if(request.method==="PATCH"&&path==="admin/session"){allow("tables.manage");const result=await updateTableSession(b.id,b.action);return json({ok:true,...result});}
@@ -156,6 +229,15 @@ async function handleScoped(request:Request){
   }
   if(request.method==="PATCH"&&path==="admin/table"){
    allow("tables.manage");
+   if(b.action==="delete"){
+    const id=checkedText(b.id,10,true);
+    const existing=await db.prepare("SELECT id FROM dining_tables WHERE id = ?").bind(id).first();
+    if(!existing)throw new OrderError("Không tìm thấy bàn cần xóa.",404);
+    // One guarded write: a concurrently opened session or historical reference blocks deletion.
+    const removed=await db.prepare("DELETE FROM dining_tables WHERE id = ? AND NOT EXISTS (SELECT 1 FROM table_sessions WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM orders WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM service_requests WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_settlements WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_payment_receipts WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_transfers WHERE from_table_id = ? OR to_table_id = ?)").bind(id,id,id,id,id,id,id,id).run();
+    if(removed.meta.changes!==1)throw new OrderError("Bàn đang có lượt phục vụ hoặc lịch sử liên quan nên không thể xóa. Lịch sử được giữ nguyên; bạn vẫn có thể sửa tên bàn.",409);
+    return json({ok:true});
+   }
    const name=checkedText(b.name,30,true),zone=checkedText(b.zone,40,true);
    if(b.create!==undefined&&typeof b.create!=="boolean")throw new OrderError("Thao tác bàn không hợp lệ.");
    if(b.create===true){
@@ -165,7 +247,7 @@ async function handleScoped(request:Request){
     const previous=await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{value:string}>();
     const token=crypto.randomUUID().replaceAll("-","")+crypto.randomUUID().replaceAll("-","");
     if(!previous)await db.batch([
-     db.prepare("INSERT INTO dining_tables (id,name,zone,token) SELECT CAST(COALESCE((SELECT MAX(CAST(id AS INTEGER)) FROM dining_tables),0)+1 AS TEXT),?,?,? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = ?) AND NOT EXISTS (SELECT 1 FROM dining_tables WHERE lower(trim(name)) = lower(?) AND lower(trim(zone)) = lower(?))").bind(name,zone,token,key,name,zone),
+     db.prepare("INSERT INTO dining_tables (id,name,zone,token) SELECT CAST(COALESCE((SELECT MAX(n) FROM (SELECT CAST(id AS INTEGER) AS n FROM dining_tables UNION ALL SELECT CAST(json_extract(value,'$.id') AS INTEGER) AS n FROM settings WHERE key LIKE 'table-create:%')),0)+1 AS TEXT),?,?,? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = ?) AND NOT EXISTS (SELECT 1 FROM dining_tables WHERE lower(trim(name)) = lower(?) AND lower(trim(zone)) = lower(?))").bind(name,zone,token,key,name,zone),
      db.prepare("INSERT OR IGNORE INTO settings (key,value) SELECT ?,json_object('id',id,'name',name,'zone',zone) FROM dining_tables WHERE token = ?").bind(key,token)
     ]);
     const saved=await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{value:string}>();

@@ -2,14 +2,17 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowRight, ArrowRightLeft, Banknote, BellRing, Check, CheckCheck, ChefHat, ChevronDown, Clock3, Eye, History, LoaderCircle, LogOut, ReceiptText, ShieldCheck, Smartphone, Table2, UserRound, UtensilsCrossed, X } from "lucide-react";
+import { ArrowRight, ArrowRightLeft, Banknote, BellRing, Grid2X2, List, QrCode, Check, CheckCheck, ChefHat, ChevronDown, Clock3, Eye, History, LoaderCircle, LogOut, ReceiptText, ShieldCheck, Smartphone, Table2, UserRound, UtensilsCrossed, X } from "lucide-react";
 import { money, statuses, type DiningTable, type Order, type OrderStatus, type ServiceRequest } from "@/lib/menu";
 import type { TableTransfer } from "@/lib/table-transfer-types";
 import type { Permission } from "@/lib/staff-permissions";
 import type { AdminTableSession, TableSessionAction } from "./table-session-admin";
 import "./open-table-board.css";
+import {QRCodeSVG} from "qrcode.react";
+import {activeStoreId} from "@/lib/store-links";
+import {tableQrPath} from "@/lib/qr-entry";
 
-type BoardFilter = "all" | "support" | "new" | "preparing" | "ready" | "pending";
+type BoardFilter = "all" | "support" | "new" | "preparing" | "ready" | "pending" | "bill" | "service";
 type OpenTable = {
   session: AdminTableSession;
   table: DiningTable | undefined;
@@ -29,6 +32,7 @@ type OpenTable = {
 
 export type OpenTableBoardProps = {
   initialView?: "matrix" | "manage";
+  mode?: "tables" | "orders" | "support";
   permissions: Permission[];
   tables: DiningTable[];
   sessions: AdminTableSession[];
@@ -162,12 +166,14 @@ function TableVisitPopup({title,busy,onDismiss,children}:{title:string;busy:bool
   </dialog>;
 }
 
-export function OpenTableBoard({ initialView = "matrix", permissions, tables, sessions, orders, calls, transfers, working, focusTableId, focusRevision, onSessionAction, onOrderStatus, onCollect, onCollectTable, onCancel, onViewOrder, onResolveCall, onTransfer }: OpenTableBoardProps) {
+export function OpenTableBoard({ initialView = "matrix", mode = "tables", permissions, tables, sessions, orders, calls, transfers, working, focusTableId, focusRevision, onSessionAction, onOrderStatus, onCollect, onCollectTable, onCancel, onViewOrder, onResolveCall, onTransfer }: OpenTableBoardProps) {
+  const [matrixLayout,setMatrixLayout]=useState<"grid"|"list">("grid");
+  const [qrTable,setQrTable]=useState<DiningTable|null>(null);
   const [boardView,setBoardView]=useState<"matrix"|"manage">(initialView);
   const [popupSessionId,setPopupSessionId]=useState<string|null>(null);
   const [filter, setFilter] = useState<BoardFilter>("all");
   const [zone, setZone] = useState("all");
-  const [matrixFilter, setMatrixFilter] = useState<"all" | "active" | "free" | "pending">("all");
+  const [matrixFilter, setMatrixFilter] = useState<"all" | "active" | "free" | "pending" | "bill" | "support">("all");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [closeId, setCloseId] = useState<string | null>(null);
@@ -183,17 +189,20 @@ export function OpenTableBoard({ initialView = "matrix", permissions, tables, se
   const rows = useMemo(() => buildOpenTables(tables, sessions, orders, calls, transfers), [tables, sessions, orders, calls, transfers]);
   const busy = working || busyId !== null;
   const zones = [...new Set(tables.map(table => table.zone).filter(Boolean))];
+  const queueRows=rows.filter(row=>mode==="orders"?row.session.status==="active"&&row.orders.length>0:mode==="support"?row.session.status==="active"&&row.calls.length>0:true);
   const counts = {
-    all: rows.length,
-    new: rows.filter(row => row.newOrders.length > 0).length,
-    support: rows.filter(row => row.session.status === "active" && row.calls.length > 0).length,
-    preparing: rows.filter(row => row.preparing > 0).length,
-    ready: rows.filter(row => row.ready > 0).length,
-    pending: rows.filter(row => row.session.status === "pending").length,
+    all: queueRows.length,
+    new: queueRows.filter(row => row.newOrders.length > 0).length,
+    support: queueRows.filter(row => row.session.status === "active" && row.calls.length > 0).length,
+    preparing: queueRows.filter(row => row.preparing > 0).length,
+    ready: queueRows.filter(row => row.ready > 0).length,
+    pending: queueRows.filter(row => row.session.status === "pending").length,
+    bill: queueRows.filter(row=>row.calls.some(call=>call.kind==="bill")).length,
+    service: queueRows.filter(row=>row.calls.some(call=>call.kind!=="bill")).length,
   };
-  const newOrderCount = rows.reduce((sum, row) => sum + row.newOrders.length, 0);
-  const visible = rows.filter(row => (zone === "all" || row.table?.zone === zone) && (
-    filter === "all" || filter === "support" && row.session.status === "active" && row.calls.length > 0 || filter === "new" && row.newOrders.length > 0 || filter === "preparing" && row.preparing > 0 || filter === "ready" && row.ready > 0 || filter === "pending" && row.session.status === "pending"
+
+  const visible = queueRows.filter(row => (zone === "all" || row.table?.zone === zone) && (
+    filter === "all" || filter === "bill" && row.calls.some(call=>call.kind==="bill") || filter === "service" && row.calls.some(call=>call.kind!=="bill") || filter === "support" && row.session.status === "active" && row.calls.length > 0 || filter === "new" && row.newOrders.length > 0 || filter === "preparing" && row.preparing > 0 || filter === "ready" && row.ready > 0 || filter === "pending" && row.session.status === "pending"
   ));
   const byTable = new Map(rows.map(row => [row.session.table_id, row]));
   const zoneTables = tables.filter(table => zone === "all" || table.zone === zone);
@@ -202,22 +211,20 @@ export function OpenTableBoard({ initialView = "matrix", permissions, tables, se
     active: zoneTables.filter(table => byTable.get(table.id)?.session.status === "active").length,
     pending: zoneTables.filter(table => byTable.get(table.id)?.session.status === "pending").length,
     free: zoneTables.filter(table => !byTable.has(table.id)).length,
+    bill: zoneTables.filter(table=>byTable.get(table.id)?.calls.some(call=>call.kind==="bill")).length,
+    support: zoneTables.filter(table=>byTable.get(table.id)?.calls.some(call=>call.kind!=="bill")).length,
   };
-  const matrixTables = zoneTables.filter(table => matrixFilter === "all" || (byTable.get(table.id)?.session.status ?? "free") === matrixFilter)
+  const matrixTables = zoneTables.filter(table => matrixFilter === "all" || (matrixFilter==="bill"?byTable.get(table.id)?.calls.some(call=>call.kind==="bill"):matrixFilter==="support"?byTable.get(table.id)?.calls.some(call=>call.kind!=="bill"):(byTable.get(table.id)?.session.status ?? "free") === matrixFilter))
     .sort((a, b) => a.name.localeCompare(b.name, "vi", { numeric: true }));
-  const matrixZones = [...new Set(matrixTables.map(table => table.zone || "Chưa phân khu"))];
+
 
   const popupRow=rows.find(row=>row.session.id===popupSessionId);
   function selectMatrixTable(row: OpenTable) {setActionError("");setPopupSessionId(row.session.id);}
-  function switchBoardView(next:"matrix"|"manage") {
-    setBoardView(next);
-    const url=new URL(window.location.href);url.searchParams.set("board",next);
-    window.history.pushState({},"",url);
-  }
   useEffect(()=>{
+    if(mode!=="tables")return;
     const sync=()=>setBoardView(new URL(window.location.href).searchParams.get("board")==="manage"?"manage":"matrix");
     sync();window.addEventListener("popstate",sync);return()=>window.removeEventListener("popstate",sync);
-  },[]);
+  },[mode]);
   const closing = canManageTables ? rows.find(row => row.session.id === closeId && row.session.status === "active") : undefined;
 
   useEffect(() => {
@@ -295,49 +302,44 @@ export function OpenTableBoard({ initialView = "matrix", permissions, tables, se
         </article>;
   }
 
-  return <section className="open-table-board" aria-labelledby={id + "-title"}>
-    <header className="otb-heading">
-      <div><p className="eyebrow">ĐANG PHỤC VỤ</p><h2 id={id + "-title"}>Bàn đang mở</h2><p>Mỗi bàn một ô · Gọi món, hỗ trợ, thanh toán và lịch sử cùng một chỗ.</p></div>
-      <div className="otb-overview"><span><Table2 size={17} /><strong>{counts.all - counts.pending}</strong> bàn đang mở</span>{counts.support > 0 && <span className="support"><BellRing size={20} /><strong>{counts.support}</strong> bàn cần hỗ trợ</span>}{newOrderCount > 0 && <span className="attention"><BellRing size={16} /><strong>{newOrderCount}</strong> đơn chờ nhận</span>}</div>
-    </header>
-    <div className="otb-view-switch" role="group" aria-label="Chọn trang quản lý bàn">
-      <button type="button" aria-pressed={boardView==="matrix"} onClick={()=>switchBoardView("matrix")}><Table2 size={20}/>Sơ đồ bàn</button>
-      <button type="button" aria-pressed={boardView==="manage"} onClick={()=>switchBoardView("manage")}><UtensilsCrossed size={20}/>Quản trị bàn</button>
-    </div>
-    {zones.length > 1 && <label className="otb-zone otb-view-zone"><span>Khu vực</span><select value={zone} onChange={event => setZone(event.target.value)}><option value="all">Tất cả khu vực</option>{zones.map(value => <option value={value} key={value}>{value}</option>)}</select></label>}
-    {boardView==="matrix" && <section className="table-matrix" aria-labelledby={id + "-matrix-title"}>
-      <div className="table-matrix-heading"><div><h3 id={id + "-matrix-title"}><Table2 size={23} />Sơ đồ bàn</h3><p>Chạm ô bàn để mở popup xử lý đơn, hỗ trợ và thanh toán.</p></div>
+  const zonePicker = zones.length>1&&<label className="otb-zone"><span>Khu vực</span><select value={zone} onChange={event=>setZone(event.target.value)}><option value="all">Tất cả khu vực</option>{zones.map(value=><option key={value} value={value}>{value}</option>)}</select></label>;
 
-      </div>
+  return <section className="open-table-board" aria-labelledby={id + "-title"}>
+    <header className={"otb-heading aw-board-heading"+(mode==="tables"?" aw-table-heading":"")}><h2 id={id + "-title"}>{mode==="orders"?"Đơn món":mode==="support"?"Hỗ trợ":"Sơ đồ bàn"}</h2>{mode==="tables"&&zonePicker}{mode==="tables"&&<div className="aw-view-toggle" role="group" aria-label="Cách hiển thị bàn"><button type="button" aria-label="Dạng lưới" aria-pressed={matrixLayout==="grid"} onClick={()=>{setMatrixLayout("grid");setBoardView("matrix");}}><Grid2X2 size={18}/></button><button type="button" aria-label="Dạng danh sách" aria-pressed={matrixLayout==="list"} onClick={()=>{setMatrixLayout("list");setBoardView("matrix");}}><List size={18}/></button></div>}</header>
+    {mode!=="tables"&&zonePicker}
+    {boardView==="matrix" && <section className="table-matrix" aria-labelledby={id + "-matrix-title"}>
       <div className="table-matrix-filters" role="group" aria-label="Lọc sơ đồ bàn">
-        {([{ id: "all", label: "Tất cả" }, { id: "active", label: "Đang phục vụ" }, { id: "free", label: "Bàn trống" }, { id: "pending", label: "Chờ duyệt" }] as const).map(option => <button type="button" key={option.id} className={"table-matrix-filter " + option.id + (matrixFilter === option.id ? " selected" : "")} aria-pressed={matrixFilter === option.id} onClick={() => setMatrixFilter(option.id)}><span className="table-matrix-dot" aria-hidden="true" />{option.label}<strong>{matrixCounts[option.id]}</strong></button>)}
+        {([{ id: "all", label: "Tất cả" }, { id: "pending", label: "Chờ duyệt" }, { id: "bill", label: "Yêu cầu thanh toán" }, { id: "active", label: "Đang phục vụ" }, { id: "support", label: "Cần hỗ trợ" }, { id: "free", label: "Trống" }] as const).map(option => <button type="button" key={option.id} className={"table-matrix-filter " + option.id + (matrixFilter === option.id ? " selected" : "")} aria-label={option.label+": "+matrixCounts[option.id]+" bàn"} aria-pressed={matrixFilter === option.id} onClick={() => setMatrixFilter(option.id)}><strong>{matrixCounts[option.id]}</strong><span className="aw-filter-label">{option.label}</span></button>)}
       </div>
-      {matrixZones.map(area => <section className="table-matrix-zone" key={area} aria-label={area}><h4>{area}</h4><div className="table-matrix-grid">
-        {matrixTables.filter(table => (table.zone || "Chưa phân khu") === area).map(table => {
-          const row = byTable.get(table.id), state = row?.session.status ?? "free";
-          const label = state === "active" ? "Đang phục vụ" : state === "pending" ? "Chờ duyệt" : "Bàn trống";
-          const content = <><span className="table-matrix-name"><Table2 size={22} aria-hidden="true" /><strong>{table.name}</strong></span><span className="table-matrix-status"><i className="table-matrix-dot" aria-hidden="true" />{label}</span>{row ? <><span className="table-matrix-customer">{row.session.customer_name}</span>{state === "active" && <span className="table-matrix-balance">Chưa thu<strong>{money(row.unpaid)}</strong></span>}{row.calls.length > 0 && state === "active" && <span className="table-matrix-alert"><BellRing size={14} />Cần hỗ trợ</span>}{row.newOrders.length > 0 && <span className="table-matrix-new">{row.newOrders.length} đơn mới</span>}<span className="table-matrix-open">Mở xử lý bàn <ArrowRight size={14} aria-hidden="true" /></span></> : <span className="table-matrix-customer">Sẵn sàng đón khách</span>}</>;
-          return row ? <button type="button" key={table.id} className={"table-matrix-tile " + state + (row.calls.length ? " needs-support" : "")} aria-label={table.name + ", " + label + ", " + row.session.customer_name + ". Mở popup xử lý bàn"} aria-haspopup="dialog" onClick={() => selectMatrixTable(row)}>{content}</button> : <div className="table-matrix-tile free" key={table.id}>{content}</div>;
-        })}
-      </div></section>)}
+      <div className="aw-board-meta"><span>{matrixTables.length} bàn · {zone==="all"?"Tất cả khu vực":zone}</span></div>
+      <div className={"aw-table-grid "+(matrixLayout==="list"?"is-list":"")}>
+      {matrixTables.map(table=>{const row=byTable.get(table.id),state=row?.session.status??"free";
+        const bill=row?.calls.some(call=>call.kind==="bill"),support=row?.calls.some(call=>call.kind!=="bill"),hasNew=!!row?.newOrders.length;
+        return <article className={"aw-table-tile "+state+(bill||support||hasNew?" needs-action":"")} key={table.id}>
+          <h3>{table.name}</h3><span className="aw-table-state">{state==="pending"?"Chờ duyệt":state==="active"?"Đang phục vụ":"Bàn trống"}</span>
+          <div className="aw-table-alert">{state==="pending"?"Chờ mở bàn":bill?"Yêu cầu thanh toán":hasNew?row!.newOrders.length+" đơn mới"+(support?" · Cần hỗ trợ":""):support?"Cần hỗ trợ":row?.ready?row.ready+" chờ phục vụ":row?.preparing?row.preparing+" đang làm":row?"Chưa thu "+money(row.unpaid):"Sẵn sàng đón khách"}</div>
+          <div className="aw-table-actions">{row&&<button type="button" className="primary" onClick={()=>selectMatrixTable(row)} aria-label={"Xử lý "+table.name}>{state==="pending"?"Duyệt":bill?"Thanh toán":support&&!hasNew?"Hỗ trợ":"Xử lý"}</button>}{canManageTables&&table.token&&<button type="button" className="aw-icon" aria-label={"Mã QR "+table.name} onClick={()=>setQrTable(table)}><QrCode size={19}/></button>}</div>
+        </article>;
+      })}</div>
       {!matrixTables.length && <p className="table-matrix-empty" role="status">Không có bàn phù hợp với bộ lọc đã chọn.</p>}
       <p className="table-matrix-note">Bàn đang phục vụ chỉ trở về trạng thái trống sau khi đóng lượt phục vụ.</p>
     </section>}
     {boardView==="manage" && <>
-    <h3 className="table-matrix-detail-heading">Quản trị bàn</h3>
+
     <div className="otb-toolbar">
       <div className="otb-filters" role="group" aria-label="Lọc tình trạng bàn">
-        {([{ id: "all", label: "Tất cả" }, { id: "support", label: "Cần hỗ trợ" }, { id: "new", label: "Cần nhận đơn" }, { id: "preparing", label: "Đang làm" }, { id: "ready", label: "Chờ phục vụ" }, { id: "pending", label: "Chờ mở" }] as const).map(option => <button type="button" key={option.id} className={(filter === option.id ? "selected " : "") + (option.id === "new" && counts.new ? "has-new" : option.id === "support" && counts.support ? "has-support" : "")} aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.label}<span>{counts[option.id]}</span></button>)}
+        {(mode==="support"?[{id:"all",label:"Tất cả"},{id:"bill",label:"Yêu cầu thanh toán"},{id:"service",label:"Gọi nhân viên"}] as const:mode==="orders"?[{id:"all",label:"Tất cả"},{id:"new",label:"Cần nhận đơn"},{id:"preparing",label:"Đang làm"},{id:"ready",label:"Chờ phục vụ"}] as const:[{ id: "all", label: "Tất cả" }, { id: "support", label: "Cần hỗ trợ" }, { id: "new", label: "Cần nhận đơn" }, { id: "preparing", label: "Đang làm" }, { id: "ready", label: "Chờ phục vụ" }, { id: "pending", label: "Chờ mở" }] as const).map(option => <button type="button" key={option.id} className={(filter === option.id ? "selected " : "") + (option.id === "new" && counts.new ? "has-new" : option.id === "support" && counts.support ? "has-support" : "")} aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.label}<span>{counts[option.id]}</span></button>)}
       </div>
 
     </div>
     {actionError && <p className="otb-action-error" role="alert">{actionError}</p>}
     {visible.length ? <div className="otb-grid">
       {visible.map(row => renderTable(row))}
-    </div> : <div className="otb-empty"><Table2 size={37} /><h3>{rows.length ? "Chưa có bàn phù hợp" : "Chưa có bàn đang mở"}</h3><p>{rows.length ? "Chọn tình trạng hoặc khu vực khác để xem các bàn đang phục vụ." : "Khi khách quét QR và gửi tên, yêu cầu mở bàn sẽ xuất hiện tại đây."}</p>{(filter !== "all" || zone !== "all") && <button type="button" className="secondary" onClick={() => { setFilter("all"); setZone("all"); }}>Xem tất cả bàn</button>}</div>}
+    </div> : <div className="otb-empty"><Table2 size={37} /><h3>{rows.length ? "Chưa có bàn phù hợp" : mode==="orders"?"Chưa có đơn cần xử lý":mode==="support"?"Chưa có yêu cầu hỗ trợ":"Chưa có bàn đang mở"}</h3><p>{rows.length ? "Chọn tình trạng hoặc khu vực khác để xem các bàn đang phục vụ." : "Khi khách quét QR và gửi tên, yêu cầu mở bàn sẽ xuất hiện tại đây."}</p>{(filter !== "all" || zone !== "all") && <button type="button" className="secondary" onClick={() => { setFilter("all"); setZone("all"); }}>Xem tất cả bàn</button>}</div>}
     <p className="otb-footnote"><History size={13} />Bàn đã đóng và lịch sử quyết toán được lưu trong mục Doanh thu.</p>
     </>}
     {popupSessionId && <TableVisitPopup title={popupRow?"Xử lý "+popupRow.name:"Lượt phục vụ đã kết thúc"} busy={busy} onDismiss={()=>{setPopupSessionId(null);setActionError("");}}>{actionError&&<p className="otb-action-error" role="alert">{actionError}</p>}{popupRow?renderTable(popupRow,true):<p className="otb-popup-ended" role="status">Bàn đã đóng hoặc yêu cầu mở bàn đã được xử lý. Sơ đồ bàn đã cập nhật trạng thái mới.</p>}</TableVisitPopup>}
+    {qrTable&&canManageTables&&<TableVisitPopup title={"Mã QR · "+qrTable.name} busy={false} onDismiss={()=>setQrTable(null)}><div className="aw-qr-preview"><QRCodeSVG value={(typeof window!=="undefined"?window.location.origin:"")+tableQrPath(qrTable.token,activeStoreId())} size={220} marginSize={4} title={"Mã QR "+qrTable.name}/><p>Quét mã · Nhập tên · Chờ mở bàn</p></div></TableVisitPopup>}
     {closing && <CloseVisitDialog row={closing} busy={busy} error={actionError} onDismiss={() => { setActionError(""); setCloseId(null); }} onConfirm={async () => { if (!canManageTables || closing.outstanding > 0) return; if (await act(closing.session.id, "tables.manage", () => onSessionAction(closing.session.id, "close"))) setCloseId(null); }} />}
   </section>;
 }

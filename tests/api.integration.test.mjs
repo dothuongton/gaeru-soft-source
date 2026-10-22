@@ -45,6 +45,8 @@ function loadApp(entry = "route") {
     staffPermissions: "lib/staff-permissions.ts",
     staffAccess: "lib/staff-access.ts",
     adminDashboard: "lib/admin-dashboard.ts",
+    staffPush: "lib/staff-push.ts",
+    workerContext: "lib/worker-context.ts",
   };
   function load(name) {
     if (cache.has(name)) return cache.get(name).exports;
@@ -78,6 +80,15 @@ function loadApp(entry = "route") {
       if (specifier === "@/lib/staff-permissions" || specifier === "./staff-permissions") return load("staffPermissions");
       if (specifier === "@/lib/staff-access" || specifier === "./staff-access") return load("staffAccess");
       if (specifier === "@/lib/admin-dashboard" || specifier === "./admin-dashboard") return load("adminDashboard");
+      if (specifier === "@/lib/staff-push" || specifier === "./staff-push") return load("staffPush");
+      if (specifier === "@/lib/worker-context" || specifier === "./worker-context") return load("workerContext");
+      if (specifier === "@block65/webcrypto-web-push") return {
+        buildPushPayload: async () => ({
+          headers: { authorization: "vapid t=test", ttl: "60", "content-encoding": "aes128gcm" },
+          method: "POST",
+          body: new Uint8Array([1, 2, 3]),
+        }),
+      };
       throw new Error(`Unexpected application import: ${specifier}`);
     };
     new Function("require", "module", "exports", output)(require, compiledModule, compiledModule.exports);
@@ -3688,4 +3699,66 @@ test("custom dish extras validate, price checkout and preserve historical orders
  const stale=checkout({expectedTotal:82000});stale.items[0].extras=["custom-egg"];assert.equal((await call("POST","orders",stale)).status,400);
  assert.equal((await call("POST","orders",orderBody)).data.order.total,82000);
  assert.deepEqual((await call("GET","menu?preview=1")).data.items.find(i=>i.id===chicken.id).extras,[]);
+});
+
+test("deleting an unused table requires permission, invalidates its QR and never reuses a creation identity",async()=>{
+ const body={create:true,requestId:crypto.randomUUID(),name:"Bàn QA xóa",zone:"QA"};
+ const created=await call("PATCH","admin/table",body,{staff:true});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const id=created.data.table.id;
+ assert.equal((await call("PATCH","admin/table",{id,action:"delete"})).status,403);
+ const employee=await grantStaff(["orders.view"]);
+ assert.equal((await call("PATCH","admin/table",{id,action:"delete"},{identity:employee.identity})).status,403);
+ assert.equal((await call("PATCH","admin/table",{id,action:"delete"},{staff:true})).status,200);
+ assert.equal((await call("GET","menu?table="+created.data.table.token)).status,404);
+ const next=await call("PATCH","admin/table",{...body,name:"Bàn QA mới",requestId:crypto.randomUUID()},{staff:true});
+ assert.equal(next.status,201,JSON.stringify(next.data));
+ assert.notEqual(next.data.table.id,id);
+ assert.equal((await call("PATCH","admin/table",body,{staff:true})).status,404);
+});
+test("table deletion preserves pending, active and closed-session history",async()=>{
+ const before=rowCount("dining_tables");
+ const protectedTable=await call("PATCH","admin/table",{id:table.id,action:"delete"},{staff:true});
+ assert.equal(protectedTable.status,409,JSON.stringify(protectedTable.data));
+ const added=await call("PATCH","admin/table",{create:true,requestId:crypto.randomUUID(),name:"Bàn QA lịch sử",zone:"QA"},{staff:true});
+ const opened=await openTable(added.data.table,guestB,"Khách QA");
+ assert.equal((await call("PATCH","admin/table",{id:added.data.table.id,action:"delete"},{staff:true})).status,409);
+ assert.equal((await call("PATCH","admin/session",{id:opened.id,action:"close"},{staff:true})).status,200);
+ assert.equal((await call("PATCH","admin/table",{id:added.data.table.id,action:"delete"},{staff:true})).status,409);
+ assert.equal(rowCount("dining_tables"),before+1);
+});
+test("a QR request cannot create an orphan visit if the unused table is deleted before its session insert",async()=>{
+ const added=await call("PATCH","admin/table",{create:true,requestId:crypto.randomUUID(),name:"Bàn QA cạnh tranh",zone:"QA"},{staff:true});
+ assert.equal(added.status,201);
+ const target=added.data.table;
+ await call("GET","menu?table="+target.token,undefined,{guest:guestB});
+ let raced=false;
+ beforeWrite=async statements=>{
+  if(raced||!statements.some(sql=>/INSERT OR IGNORE INTO table_sessions/i.test(sql)))return;
+  raced=true;beforeWrite=null;
+  const removed=await call("PATCH","admin/table",{id:target.id,action:"delete"},{staff:true});
+  assert.equal(removed.status,200,JSON.stringify(removed.data));
+ };
+ const request=await call("POST","table-session",{tableToken:target.token,customerName:"Khách QA"},{guest:guestB});
+ assert.equal(raced,true);
+ assert.equal(request.status,409,JSON.stringify(request.data));
+ assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM table_sessions WHERE table_id = ?").get(target.id).n,0);
+});
+test("an empty store keeps preview and administration available after deleting all unused tables",async()=>{
+ const store=await createTestStore("empty-layout");
+ const board=await storeCall(store.id,"GET","admin",undefined,{staff:true});
+ assert.equal(board.status,200);
+ for(const unused of board.data.tables){
+  const result=await storeCall(store.id,"PATCH","admin/table",{id:unused.id,action:"delete"},{staff:true});
+  assert.equal(result.status,200,JSON.stringify(result.data));
+ }
+ const preview=await storeCall(store.id,"GET","menu?preview=1",undefined,{staff:true});
+ assert.equal(preview.status,200,JSON.stringify(preview.data));
+ assert.equal(preview.data.connection.state,"preview");
+ assert.equal(preview.data.table.token,"");
+ const empty=await storeCall(store.id,"GET","admin",undefined,{staff:true});
+ assert.equal(empty.status,200);
+ assert.equal(empty.data.tables.length,0);
+ const recreated=await storeCall(store.id,"PATCH","admin/table",{create:true,requestId:crypto.randomUUID(),name:"Bàn đầu tiên",zone:"Sảnh"},{staff:true});
+ assert.equal(recreated.status,201,JSON.stringify(recreated.data));
 });

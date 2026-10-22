@@ -2,7 +2,7 @@
 import {activeStoreId} from "@/lib/store-links";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ArrowUpRight, Check, Clock3, Download, LoaderCircle, LockKeyhole, LogOut, Pencil, Plus, Printer, ReceiptText, ShieldCheck, Smartphone, Table2, UserRound, X } from "lucide-react";
+import { ArrowUpRight, Check, Clock3, Download, LoaderCircle, LockKeyhole, LogOut, Pencil, Plus, QrCode, Printer, ReceiptText, ShieldCheck, Smartphone, Table2, Trash2, UserRound, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { money, type DiningTable, type Order } from "@/lib/menu";
 import { tableQrPath } from "@/lib/qr-entry";
@@ -145,7 +145,7 @@ function downloadQr(table: DiningTable) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function TableManagement({ tables, sessions, orders, shopName, origin, working, onAction, onEditTable, onAddTable, onViewOrders }: {
+export function TableManagement({ tables, sessions, orders, shopName, origin, working, onAction, onEditTable, onAddTable, onViewOrders, onDeleteTable }: {
   tables: DiningTable[];
   sessions: AdminTableSession[];
   orders: Order[];
@@ -156,8 +156,10 @@ export function TableManagement({ tables, sessions, orders, shopName, origin, wo
   onEditTable: (table: DiningTable) => void;
   onAddTable: () => void;
   onViewOrders: (tableId: string) => void;
+  onDeleteTable: (table: DiningTable) => void;
 }) {
   const [closeId, setCloseId] = useState<string | null>(null);
+  const [qrTable,setQrTable]=useState<DiningTable|null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
   const actionLock = useRef(false);
@@ -187,7 +189,7 @@ export function TableManagement({ tables, sessions, orders, shopName, origin, wo
 
   return <section className="table-session-management">
     <div className="section-heading table-management-heading">
-      <div><h2>Quản lý bàn & mã QR</h2><p>Kiểm tra tên khách tại bàn trước khi duyệt. Đóng bàn khi kết thúc lượt phục vụ để đón khách tiếp theo.</p></div>
+      <div><p>Thêm, sửa, xóa bàn và quản lý mã QR của quán.</p></div>
       <div className="table-management-actions no-print"><button type="button" className="primary" disabled={busy} onClick={onAddTable}><Plus size={19}/>Thêm bàn</button><button type="button" className="secondary" disabled={!origin} onClick={() => window.print()}><Printer size={17} />In tất cả mã QR</button></div>
     </div>
     <div className="table-session-overview no-print" aria-label="Tình trạng các bàn">
@@ -197,14 +199,16 @@ export function TableManagement({ tables, sessions, orders, shopName, origin, wo
       <p><LockKeyhole size={14} />Mỗi bàn chỉ có một trình duyệt được gọi món.</p>
     </div>
     {actionError && !selectedSession && <p className="inline-error no-print" role="alert">{actionError}</p>}
-    <div className="table-grid table-session-grid">
+    <div className="aw-managed-tables no-print">{tables.map(table=><article key={table.id} className="aw-managed-table"><div><strong>{table.name}</strong><small>{table.zone} · {liveSessions.get(table.id)?.status==="active"?"Đang phục vụ":liveSessions.get(table.id)?.status==="pending"?"Chờ duyệt":"Bàn trống"}</small></div><div><button type="button" className="aw-icon" aria-label={"Mã QR "+table.name} onClick={()=>setQrTable(table)}><QrCode size={19}/></button><button type="button" className="aw-icon" disabled={busy} aria-label={"Sửa "+table.name} onClick={()=>onEditTable(table)}><Pencil size={18}/></button><button type="button" className="aw-icon" disabled={busy||liveSessions.has(table.id)} aria-label={"Xóa "+table.name} onClick={()=>onDeleteTable(table)}><Trash2 size={18}/></button></div></article>)}</div>
+    {qrTable&&<TableQrPreview table={qrTable} origin={origin} onClose={()=>setQrTable(null)}/>}
+    <div className="table-grid table-session-grid aw-print-tables">
       {tables.map(table => {
         const session = liveSessions.get(table.id);
         const state = session?.status || "free";
         const summary = session ? getSessionOrders(orders, session) : null;
         const canClose = session?.status === "active" && summary?.outstanding === 0;
         return <article className={"qr-card table-session-card " + state} key={table.id}>
-          <div className="qr-card-head"><strong>{table.name}</strong><button type="button" className="icon-btn no-print" disabled={busy} aria-label={"Đổi tên " + table.name} onClick={() => onEditTable(table)}><Pencil size={15} /></button></div>
+          <div className="qr-card-head"><strong>{table.name}</strong><button type="button" className="icon-btn no-print" disabled={busy} aria-label={"Đổi tên " + table.name} onClick={() => onEditTable(table)}><Pencil size={15} /></button><button type="button" className="icon-btn no-print" disabled={busy||!!session} aria-label={"Xóa "+table.name} onClick={()=>onDeleteTable(table)}><Trash2 size={16}/></button></div>
           <span className="qr-zone">{table.zone}</span>
           <div className={"table-state-badge " + state + " no-print"}><i className={"table-state-dot " + state} />{state === "pending" ? "Chờ duyệt mở bàn" : state === "active" ? "Đang phục vụ" : "Bàn trống"}</div>
           <div className="table-session-customer no-print">
@@ -227,4 +231,10 @@ export function TableManagement({ tables, sessions, orders, shopName, origin, wo
     </div>
     {selectedSession && <CloseTableDialog session={selectedSession} tableName={selectedTable?.name || selectedSession.table_name || "bàn"} outstanding={getSessionOrders(orders, selectedSession).outstanding} working={busy} error={actionError} onClose={() => { setActionError(""); setCloseId(null); }} onConfirm={async () => { if (getSessionOrders(orders, selectedSession).outstanding > 0) return; if (await act(selectedSession.id, "close")) setCloseId(null); }} />}
   </section>;
+}
+
+function TableQrPreview({table,origin,onClose}:{table:DiningTable;origin:string;onClose:()=>void}){
+ const dialog=useRef<HTMLDialogElement>(null),heading=useId();
+ useEffect(()=>{const previous=document.activeElement as HTMLElement|null;dialog.current?.showModal();return()=>{dialog.current?.close();previous?.focus({preventScroll:true});};},[]);
+ return <dialog ref={dialog} className="modal" aria-labelledby={heading} onCancel={event=>{event.preventDefault();onClose();}}><div className="modal-header"><h2 id={heading}>Mã QR · {table.name}</h2><button type="button" className="icon-btn" onClick={onClose} aria-label="Đóng mã QR"><X size={20}/></button></div><div className="aw-qr-preview">{origin&&<QRCodeSVG value={origin+tableQrPath(table.token,activeStoreId())} size={220} marginSize={4} title={"Mã QR "+table.name}/>}<p>Quét mã · Nhập tên · Chờ mở bàn</p><button type="button" className="secondary" onClick={()=>downloadQr(table)}><Download size={18}/>Tải mã QR</button></div></dialog>;
 }
