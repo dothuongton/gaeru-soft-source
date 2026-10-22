@@ -1,3 +1,4 @@
+import {conditionalJson} from "@/lib/conditional-json";
 import {inStore, currentStoreId} from "@/lib/store-database";
 import {resolveStore,listStores,createStore,updateStoreStatus,saveStoreBranding} from "@/lib/store-platform";
 import {database,seed,deviceIdentity,getTable,getMenu,getShop,publicOrder,json,readBody} from "@/lib/server";
@@ -9,7 +10,7 @@ import {transferTable} from "@/lib/table-transfer-server";
 import {getDisplaySettings,saveDisplaySettings} from "@/lib/display-settings-server";
 import {getThemeSettings,saveThemeSettings} from "@/lib/theme-settings-server";
 import {readQrEntry} from "@/lib/qr-entry";
-import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories,brandingRevision} from "@/lib/menu";
+import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories,brandingRevision,publicShop} from "@/lib/menu";
 import type {OrderStatus} from "@/lib/menu";
 import {getStaffAccess,updateOwnProfile,listStaffAccounts,createStaffAccount,updateStaffAccount} from "@/lib/staff-access";
 import {hasPermission,type Permission} from "@/lib/staff-permissions";
@@ -49,7 +50,7 @@ async function handleScoped(request:Request){
   await seed();const db=database();
   if(request.method==="GET"){
    if(path==="shop-info"){const [shop,themeSettings]=await Promise.all([getShop(),getThemeSettings()]);return json({shop:{...shop,logo:shop.logo?"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(shop):""},themeSettings});}
-   if(path==="branding-icon"){const shop=await getShop();if(shop.logo){const binary=atob(shop.logo.split(",")[1]);return new Response(Uint8Array.from(binary,c=>c.charCodeAt(0)),{headers:{"Content-Type":"image/png","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});}return new Response(shopIconSvg(shop.name),{headers:{"Content-Type":"image/svg+xml","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});}
+   if(path==="branding-icon"){const shop=await getShop();if(url.searchParams.has("v")&&url.searchParams.get("v")!==brandingRevision(shop))return json({error:"Ảnh thương hiệu đã thay đổi. Vui lòng tải lại trang."},404);const headers={"Cache-Control":url.searchParams.get("v")===brandingRevision(shop)?"public, max-age=31536000, immutable":"no-store","X-Content-Type-Options":"nosniff"};if(shop.logo){const binary=atob(shop.logo.split(",")[1]);return new Response(Uint8Array.from(binary,c=>c.charCodeAt(0)),{headers:{"Content-Type":"image/png",...headers}});}return new Response(shopIconSvg(shop.name),{headers:{"Content-Type":"image/svg+xml",...headers}});}
    if(path==="account")return json({access});
    if(path==="stores")return json(await listStores(request));
    if(path==="admin/push/config")return json({enabled: getVapidConfig().enabled, vapidPublicKey: getVapidConfig().publicKey || null});
@@ -59,7 +60,7 @@ async function handleScoped(request:Request){
     return json(await getStaffSubscriptionStatus({userId, deviceId}));
    }
    if(path==="admin/accounts"){allow("staff.manage");return json(await listStaffAccounts(access!));}
-   if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);return json({items,shop,table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings},200,device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
+   if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);return conditionalJson(request,{items,shop:publicShop(shop,currentStoreId()),table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings},device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
    if(path==="orders"){const {tableToken,sessionHint}=readQrEntry(url.searchParams),table=await getTable(tableToken),session=await requireActiveSession(request,table,sessionHint);const r=await db.prepare("SELECT * FROM orders WHERE client_token = ? AND table_id = ? AND dining_session_id = ? ORDER BY created_at DESC,id DESC").bind(session.browser_hash,table.id,session.id).all<Record<string,unknown>>();return json({orders:r.results.map(publicOrder)});}
    if(path==="admin/revenue"){allow("revenue.view");return json(await revenueReport(url.searchParams));}
    if(path==="admin/revenue/orders"){allow("revenue.view");return json(await revenueOrders(url.searchParams));}
@@ -68,7 +69,7 @@ async function handleScoped(request:Request){
    if(path.startsWith("admin/revenue/settlements/")&&!path.slice("admin/revenue/settlements/".length).includes("/")){allow("revenue.view");return json(await getSettlement(path.slice("admin/revenue/settlements/".length)));}
    if(path==="admin"){
     const compact=url.searchParams.get("section")==="board",data=await adminDashboard(access!,!compact);
-    return json({...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop});
+    return conditionalJson(request,{...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop});
    }
    return json({error:"Không tìm thấy nội dung."},404);
   }

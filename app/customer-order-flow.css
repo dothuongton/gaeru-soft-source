@@ -371,3 +371,52 @@
 @media screen and (max-width:560px){.promotion-fields .form-two{grid-template-columns:minmax(0,1fr)}.app-shell .manage-price .dish-price strong{font-size:16px}.app-shell .detail-intro .dish-price{align-items:flex-start}}
 .dish-image-field{display:grid;gap:14px;border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}.dish-image-field legend{font-weight:700;padding:0 6px}.dish-image-field>img{width:100%;max-height:220px;object-fit:contain;border-radius:12px;background:#f4f4ef}.dish-image-field input{max-width:100%;min-width:0;box-sizing:border-box}.dish-image-field small{line-height:1.6;color:var(--muted)}
 .item-extras-editor{display:grid;gap:14px;min-width:0;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:18px}.item-extras-editor legend{font-weight:700;padding:0 6px}.item-extras-editor p,.item-extras-editor small{font-size:14px;line-height:1.6;color:var(--muted)}.extras-presets{display:flex;flex-wrap:wrap;gap:8px}.item-extras-editor button{min-height:44px;font-size:15px}.extra-edit-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,.7fr) auto;gap:10px;align-items:end;border-top:1px solid var(--line);padding-top:14px}.extra-edit-row .field{margin:0;min-width:0}.extra-edit-row input{width:100%;min-width:0}.extra-edit-row .field span{font-size:14px}@media(max-width:420px){.extra-edit-row{grid-template-columns:minmax(0,1fr) minmax(90px,1fr)}.extra-edit-row>button{grid-column:1/-1;justify-self:end}}
+
+/* Customer viewport budget: navigation and cart share one bottom inset. */
+@media screen {
+  .app-shell:not([data-view="admin"]) { --customer-header-offset: 130px; }
+  .app-shell:not([data-view="admin"]) #menu-heading { scroll-margin-top: var(--customer-header-offset); }
+  .app-shell[data-preview="true"] .ordering-layout { grid-template-columns: minmax(0, 1fr); max-width: 1100px; }
+  .app-shell[data-preview="true"] .category-sidebar { display: none; }
+}
+@media screen and (max-width: 767px) {
+  .app-shell:not([data-view="admin"]) {
+    --customer-header-offset: 190px;
+    --customer-bottom-safe: max(34px, env(safe-area-inset-bottom));
+    --customer-nav-space: calc(var(--moc-mobile-nav-height, 84px) + var(--customer-bottom-safe));
+    --customer-cart-space: 0px;
+    padding-bottom: var(--customer-nav-space);
+  }
+  .app-shell[data-cart-visible="true"]:not([data-preview="true"]) { --customer-cart-space: 190px; }
+  .app-shell:not([data-view="admin"]) .menu-main { padding-bottom: calc(24px + var(--customer-cart-space)); }
+  .app-shell:not([data-view="admin"]) .mobile-nav { height: var(--customer-nav-space); padding-bottom: calc(6px + var(--customer-bottom-safe)); }
+  .app-shell:not([data-view="admin"]) .mobile-cart-dock { bottom: calc(var(--customer-nav-space) + 10px); }
+}
+@media screen and (min-width: 768px) and (max-width: 1180px) {
+  .app-shell[data-view="menu"] .ordering-layout { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 18px; }
+  .app-shell[data-view="menu"] .category-sidebar { display: none; }
+  .app-shell[data-view="menu"] .cart-sidebar { display: block; min-width: 0; }
+  .app-shell[data-view="menu"] .food-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .app-shell[data-view="menu"] .mobile-cart-dock { display: none; }
+  .app-shell[data-view="menu"][data-preview="true"] .ordering-layout { grid-template-columns: minmax(0,1fr); }
+}
+@media screen {
+  /* A 240px flex basis became a height when the toolbar switches to a column. */
+  .app-shell:not([data-view="admin"]) .search-field { flex: 0 1 auto; width: 100%; min-height: 48px; height: auto; }
+}
+@media screen and (min-width: 768px) and (max-width: 1180px) {
+  .app-shell[data-view="menu"] .hero { min-height: 260px; grid-template-columns: minmax(0,1fr); }
+  .app-shell[data-view="menu"] .hero-copy { padding: 24px; }
+  .app-shell[data-view="menu"] .hero h1 { font-size: clamp(30px,4vw,44px); }
+  .app-shell[data-view="menu"] .hero-image, .app-shell[data-view="menu"] .hero-leaf { display: none; }
+  .app-shell[data-view="menu"] .food-card { display: flex; flex-direction: column; }
+  .app-shell[data-view="menu"] .food-card > * { min-width: 0; width: 100%; }
+  .app-shell[data-view="menu"] .food-photo { height: 150px; }
+  .app-shell[data-view="menu"] .food-info { padding: 12px; flex: 1; }
+  .app-shell[data-view="menu"] .food-title { overflow-wrap: anywhere; }
+  .app-shell[data-view="menu"] .food-actions > button { flex-basis: 100%; }
+}
+@media screen and (min-width: 768px) and (max-width: 1180px) {
+  .app-shell[data-view="menu"] .menu-main { width: 100%; max-width: 100%; margin: 0; }
+  .app-shell[data-view="menu"] .menu-subheading { flex-wrap: wrap; }
+}

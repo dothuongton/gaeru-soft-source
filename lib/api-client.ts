@@ -6,19 +6,32 @@ export class ApiError extends Error {
   }
 }
 
+const snapshots=new Map<string,{etag:string;data:unknown}>();
+let snapshotEpoch=0;
+
 /** A lost response does not prove a write failed. Callers can safely retain its request ID. */
 export async function api<T = {ok: boolean}>(path: string, options: RequestInit = {}): Promise<T> {
+  const read=(options.method||"GET").toUpperCase()==="GET";
+  if(!read){snapshots.clear();snapshotEpoch++;}
+  const epoch=snapshotEpoch,url=withStore("/api/"+path);
+  const conditional=read&&(path.split("?")[0]==="menu"||path.split("?")[0]==="admin");
+  const previous=conditional?snapshots.get(url):undefined;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const headers = new Headers(options.headers);
     if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-    const response = await fetch(withStore("/api/" + path), {...options, credentials: "same-origin", signal: controller.signal, headers});
+    if(previous)headers.set("If-None-Match",previous.etag);
+    const response = await fetch(url, {...options, credentials: "same-origin", signal: controller.signal, headers});
+    if(response.status===304&&previous)return structuredClone(previous.data) as T;
+    if(!response.ok){snapshots.clear();snapshotEpoch++;}
     let data: T & {error?: string};
     try {data = await response.json();}
     catch {throw new ApiError("Chưa đọc được phản hồi của quán. Vui lòng kiểm tra lại kết quả.", response.status, true);}
     if (!response.ok) throw new ApiError(data?.error || "Chưa thực hiện được. Vui lòng thử lại.", response.status, response.status >= 500 || response.status === 408);
     if (!data || typeof data !== "object") throw new ApiError("Phản hồi của quán chưa đầy đủ. Vui lòng kiểm tra lại kết quả.", response.status, true);
+    const etag=response.headers.get("ETag");
+    if(conditional&&etag&&epoch===snapshotEpoch){if(snapshots.size>=8)snapshots.delete(snapshots.keys().next().value!);snapshots.set(url,{etag,data:structuredClone(data)});}
     return data;
   } catch (error) {
     if (error instanceof ApiError) throw error;

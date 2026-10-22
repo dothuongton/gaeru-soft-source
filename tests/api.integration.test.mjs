@@ -44,6 +44,7 @@ function loadApp(entry = "route") {
     displaySettingsServer: "lib/display-settings-server.ts",
     themeSettings: "lib/theme-settings.ts",
     themeSettingsServer: "lib/theme-settings-server.ts",
+    conditionalJson: "lib/conditional-json.ts",
     staffPermissions: "lib/staff-permissions.ts",
     staffAccess: "lib/staff-access.ts",
     adminDashboard: "lib/admin-dashboard.ts",
@@ -59,6 +60,7 @@ function loadApp(entry = "route") {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     const require = (specifier) => {
+      if(specifier.endsWith("/conditional-json"))return load("conditionalJson");
       if(specifier==="node:async_hooks")return {AsyncLocalStorage};
       if(specifier.endsWith("/store-database"))return load("storeDatabase");
       if(specifier.endsWith("/store-platform"))return load("storePlatform");
@@ -3612,12 +3614,15 @@ test("store branding saves the logo and name atomically, updates registry and st
  const original=(await storeCall("beta","GET","menu")).data.shop;
  const update={...initialMenu.shop,name:"Tôn Cà Phê",logo:brandPng};
  assert.equal((await storeCall("alpha","PATCH","admin/shop",update,{identity:a.identity})).status,200);
- const menu=(await storeCall("alpha","GET","menu")).data;assert.equal(menu.shop.name,update.name);assert.equal(menu.shop.logo,brandPng);
+ const menu=(await storeCall("alpha","GET","menu")).data;assert.equal(menu.shop.name,update.name);assert.match(menu.shop.logo,/^\/api\/branding-icon\?store=alpha&v=/);
+ const cachedIcon=await api.GET(new Request(origin+menu.shop.logo));assert.match(cachedIcon.headers.get("cache-control"),/immutable/);assert.equal(Buffer.from(await cachedIcon.arrayBuffer()).toString("base64"),brandPng.split(",")[1]);
+ assert.equal((await storeCall("alpha","GET","admin",undefined,{identity:a.identity})).data.shop.logo,brandPng);
  const listed=await call("GET","stores",undefined,{staff:true});assert.equal(listed.data.stores.find(s=>s.id==="alpha").name,update.name);
  assert.deepEqual((await storeCall("beta","GET","menu")).data.shop,original);
  const icon=await api.GET(new Request(origin+"/api/branding-icon?store=alpha"));assert.equal(icon.status,200);assert.equal(icon.headers.get("content-type"),"image/png");assert.equal(Buffer.from(await icon.arrayBuffer()).toString("base64"),brandPng.split(",")[1]);
- const {logo,...withoutLogo}=update;assert.equal((await storeCall("alpha","PATCH","admin/shop",withoutLogo,{identity:a.identity})).status,200);assert.equal((await storeCall("alpha","GET","menu")).data.shop.logo,brandPng);
+ const {logo,...withoutLogo}=update;assert.equal((await storeCall("alpha","PATCH","admin/shop",withoutLogo,{identity:a.identity})).status,200);assert.equal((await storeCall("alpha","GET","menu")).data.shop.logo,menu.shop.logo);
  assert.equal((await storeCall("alpha","PATCH","admin/shop",{...update,logo:""},{identity:a.identity})).status,200);
+ const staleIcon=await api.GET(new Request(origin+menu.shop.logo));assert.equal(staleIcon.status,404);assert.equal(staleIcon.headers.get("cache-control"),"no-store");
  const fallback=await api.GET(new Request(origin+"/api/branding-icon?store=alpha"));assert.match(await fallback.text(),/>TC<\/text>/);
  sqlite.exec("CREATE TRIGGER fail_brand_update BEFORE UPDATE OF name ON stores WHEN NEW.id='alpha' BEGIN SELECT RAISE(ABORT,'branding rollback'); END");
  assert.equal((await storeCall("alpha","PATCH","admin/shop",{...update,name:"Không được lưu"},{identity:a.identity})).status,500);
@@ -3781,4 +3786,11 @@ test("compact admin entry omits menu payload while retaining operational data an
  assert.equal(publicInfo.status,200);
  assert.equal(publicInfo.data.shop.name,full.data.shop.name);
  assert.equal(publicInfo.data.access,undefined);
+});
+
+test("admin conditional polling still checks access before honoring its validator",async()=>{
+ const first=await call("GET","admin?section=board",undefined,{staff:true});
+ const headers={"oai-authenticated-user-id":"test-owner-id","oai-authenticated-user-email":"test@example.test","If-None-Match":first.headers.get("etag")};
+ const same=await api.GET(new Request(origin+"/api/admin?section=board",{headers}));assert.equal(same.status,304);assert.equal(await same.text(),"");
+ const unauthorized=await api.GET(new Request(origin+"/api/admin?section=board",{headers:{"If-None-Match":first.headers.get("etag")}}));assert.equal(unauthorized.status,403);
 });

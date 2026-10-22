@@ -89,3 +89,6 @@ export function validateExtras(raw:unknown):MenuExtra[]{
  const ids=new Set<string>();const labels=new Set<string>();
  return raw.map(value=>{if(!value||typeof value!=="object"||Array.isArray(value))throw new OrderError("Lựa chọn bổ sung không hợp lệ.");const id=checkedText(value.id,60,true),label=checkedText(value.label,60,true);if(!/^[a-zA-Z0-9_-]+$/.test(id)||ids.has(id)||labels.has(label.toLocaleLowerCase("vi")))throw new OrderError("Tên và mã lựa chọn bổ sung không được trùng.");if(!Number.isInteger(value.price)||value.price<0||value.price>2000000)throw new OrderError("Giá bổ sung phải từ 0 đến 2.000.000 ₫.");ids.add(id);labels.add(label.toLocaleLowerCase("vi"));return {id,label,price:value.price};});
 }
+
+// Keep persisted/editor branding intact; public readers receive a cacheable asset URL.
+export function publicShop(shop:Shop,storeId:string):Shop{return {...shop,logo:shop.logo?"/api/branding-icon?store="+encodeURIComponent(storeId)+"&v="+brandingRevision(shop):""};}

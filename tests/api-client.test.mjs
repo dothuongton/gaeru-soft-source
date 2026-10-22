@@ -46,3 +46,16 @@ test("successful calls keep same-origin credentials and caller headers", async (
     assert.deepEqual(await api("menu", {headers: new Headers({"X-Request": "test"})}), {ok: true});
   } finally {globalThis.fetch = original;}
 });
+
+test("conditional reads reuse a private snapshot, invalidate writes and reject revoked access",async()=>{
+ const original=globalThis.fetch;
+ try{
+  globalThis.fetch=async()=>Response.json({tables:["one"]},{headers:{ETag:'"board-one"'}});
+  const first=await api("admin?section=board");first.tables.push("local-change");
+  globalThis.fetch=async(url,options)=>{assert.equal(options.headers.get("If-None-Match"),'"board-one"');return new Response(null,{status:304});};
+  assert.deepEqual(await api("admin?section=board"),{tables:["one"]});
+  globalThis.fetch=async()=>Response.json({ok:true});await api("admin/shop",{method:"PATCH",body:"{}"});
+  globalThis.fetch=async(url,options)=>{assert.equal(options.headers.get("If-None-Match"),null);return Response.json({error:"revoked"},{status:403});};
+  await assert.rejects(api("admin?section=board"),error=>error.status===403);
+ }finally{globalThis.fetch=original;}
+});
