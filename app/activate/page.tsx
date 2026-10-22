@@ -31,12 +31,14 @@ export default function ActivatePage() {
       setChecking(false);
     } else {
       // Check if bootstrap is available
-      api<{ canBootstrap: boolean }>("auth/bootstrap-status")
+      api<{ canBootstrap: boolean; error?: string }>("auth/bootstrap-status")
         .then((res) => {
           setCanBootstrap(res.canBootstrap);
+          if (res.error) setError(res.error);
         })
-        .catch(() => {
+        .catch((err) => {
           setCanBootstrap(false);
+          setError(err instanceof Error ? err.message : "Chưa kết nối được máy chủ.");
         })
         .finally(() => {
           setChecking(false);

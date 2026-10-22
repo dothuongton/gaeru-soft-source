@@ -49,6 +49,79 @@ export function getOwnerEmails(): string[] {
   );
 }
 
+const PLATFORM_DDL = [
+  `CREATE TABLE IF NOT EXISTS auth_credentials (
+    email text PRIMARY KEY NOT NULL,
+    user_id text NOT NULL,
+    password_hash text NOT NULL,
+    display_name text DEFAULT '' NOT NULL,
+    must_change_password integer DEFAULT 0 NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS auth_credentials_user_id_unique ON auth_credentials (user_id)`,
+  `CREATE TABLE IF NOT EXISTS auth_sessions (
+    token_hash text PRIMARY KEY NOT NULL,
+    email text NOT NULL,
+    user_id text NOT NULL,
+    created_at integer NOT NULL,
+    expires_at integer NOT NULL,
+    last_seen_at integer NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS auth_sessions_email_idx ON auth_sessions (email)`,
+  `CREATE INDEX IF NOT EXISTS auth_sessions_expires_at_idx ON auth_sessions (expires_at)`,
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+    token_hash text PRIMARY KEY NOT NULL,
+    email text NOT NULL,
+    purpose text NOT NULL,
+    expires_at integer NOT NULL,
+    used_at integer,
+    created_at integer NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS auth_tokens_email_idx ON auth_tokens (email)`,
+  `CREATE TABLE IF NOT EXISTS auth_login_attempts (
+    attempt_key text PRIMARY KEY NOT NULL,
+    fail_count integer DEFAULT 0 NOT NULL,
+    locked_until integer DEFAULT 0 NOT NULL,
+    updated_at integer NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS auth_audit (
+    id text PRIMARY KEY NOT NULL,
+    email text NOT NULL,
+    action text NOT NULL,
+    detail_json text DEFAULT '{}' NOT NULL,
+    created_at integer NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS auth_audit_email_created_idx ON auth_audit (email, created_at)`,
+  `CREATE TABLE IF NOT EXISTS staff_owner_bindings (
+    email text PRIMARY KEY NOT NULL,
+    user_id text NOT NULL,
+    created_at integer NOT NULL,
+    last_login_at integer NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS staff_owner_bindings_user ON staff_owner_bindings (user_id)`,
+  `CREATE TABLE IF NOT EXISTS stores (
+    id text PRIMARY KEY NOT NULL,
+    name text NOT NULL,
+    admin_email text NOT NULL,
+    request_id text NOT NULL UNIQUE,
+    created_by text NOT NULL,
+    created_at integer NOT NULL,
+    status text DEFAULT 'active' NOT NULL,
+    source text DEFAULT 'platform' NOT NULL,
+    owner_name text DEFAULT '' NOT NULL,
+    phone text DEFAULT '' NOT NULL,
+    updated_at integer DEFAULT 0 NOT NULL,
+    updated_by text DEFAULT '' NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS settings (
+    store_id text DEFAULT 'main' NOT NULL,
+    key text NOT NULL,
+    value text NOT NULL,
+    PRIMARY KEY (store_id, key)
+  )`
+];
+
 let platformSchemaEnsured = false;
 
 export async function ensurePlatformSchema(): Promise<void> {
@@ -60,253 +133,18 @@ export async function ensurePlatformSchema(): Promise<void> {
       .first<{ name: string }>();
 
     if (!tableExists) {
-      await db.batch([
-        db.prepare(`CREATE TABLE IF NOT EXISTS auth_credentials (
-          email text PRIMARY KEY NOT NULL,
-          user_id text NOT NULL,
-          password_hash text NOT NULL,
-          display_name text DEFAULT '' NOT NULL,
-          must_change_password integer DEFAULT 0 NOT NULL,
-          created_at integer NOT NULL,
-          updated_at integer NOT NULL
-        )`),
-        db.prepare(
-          `CREATE UNIQUE INDEX IF NOT EXISTS auth_credentials_user_id_unique ON auth_credentials (user_id)`
-        ),
-        db.prepare(`CREATE TABLE IF NOT EXISTS auth_sessions (
-          token_hash text PRIMARY KEY NOT NULL,
-          email text NOT NULL,
-          user_id text NOT NULL,
-          created_at integer NOT NULL,
-          expires_at integer NOT NULL,
-          last_seen_at integer NOT NULL
-        )`),
-        db.prepare(
-          `CREATE INDEX IF NOT EXISTS auth_sessions_email_idx ON auth_sessions (email)`
-        ),
-        db.prepare(
-          `CREATE INDEX IF NOT EXISTS auth_sessions_expires_at_idx ON auth_sessions (expires_at)`
-        ),
-        db.prepare(`CREATE TABLE IF NOT EXISTS auth_tokens (
-          token_hash text PRIMARY KEY NOT NULL,
-          email text NOT NULL,
-          purpose text NOT NULL,
-          expires_at integer NOT NULL,
-          used_at integer,
-          created_at integer NOT NULL
-        )`),
-        db.prepare(`CREATE INDEX IF NOT EXISTS auth_tokens_email_idx ON auth_tokens (email)`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS auth_login_attempts (
-          attempt_key text PRIMARY KEY NOT NULL,
-          fail_count integer DEFAULT 0 NOT NULL,
-          locked_until integer DEFAULT 0 NOT NULL,
-          updated_at integer NOT NULL
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS auth_audit (
-          id text PRIMARY KEY NOT NULL,
-          email text NOT NULL,
-          action text NOT NULL,
-          detail_json text DEFAULT '{}' NOT NULL,
-          created_at integer NOT NULL
-        )`),
-        db.prepare(
-          `CREATE INDEX IF NOT EXISTS auth_audit_email_created_idx ON auth_audit (email, created_at)`
-        ),
-        db.prepare(`CREATE TABLE IF NOT EXISTS staff_owner_bindings (
-          email text PRIMARY KEY NOT NULL,
-          user_id text NOT NULL,
-          created_at integer NOT NULL,
-          last_login_at integer NOT NULL
-        )`),
-        db.prepare(
-          `CREATE INDEX IF NOT EXISTS staff_owner_bindings_user ON staff_owner_bindings (user_id)`
-        ),
-        db.prepare(`CREATE TABLE IF NOT EXISTS stores (
-          id text PRIMARY KEY NOT NULL,
-          name text NOT NULL,
-          admin_email text NOT NULL,
-          request_id text NOT NULL UNIQUE,
-          created_by text NOT NULL,
-          created_at integer NOT NULL,
-          status text DEFAULT 'active' NOT NULL,
-          source text DEFAULT 'platform' NOT NULL,
-          owner_name text DEFAULT '' NOT NULL,
-          phone text DEFAULT '' NOT NULL,
-          updated_at integer DEFAULT 0 NOT NULL,
-          updated_by text DEFAULT '' NOT NULL
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS settings (
-          store_id text DEFAULT 'main' NOT NULL,
-          key text NOT NULL,
-          value text NOT NULL,
-          PRIMARY KEY (store_id, key)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS dining_tables (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          name text NOT NULL,
-          zone text NOT NULL,
-          token text NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(
-          `CREATE UNIQUE INDEX IF NOT EXISTS dining_tables_token_store_unique ON dining_tables (store_id, token)`
-        ),
-        db.prepare(`CREATE TABLE IF NOT EXISTS menu_items (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          name text NOT NULL,
-          description text NOT NULL,
-          category text NOT NULL,
-          price integer NOT NULL,
-          image text NOT NULL,
-          badge text DEFAULT '' NOT NULL,
-          available integer DEFAULT 1 NOT NULL,
-          sort integer DEFAULT 0 NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS table_sessions (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          table_id text NOT NULL,
-          table_name text NOT NULL,
-          browser_hash text NOT NULL,
-          customer_name text NOT NULL,
-          status text DEFAULT 'pending' NOT NULL,
-          created_at integer NOT NULL,
-          updated_at integer NOT NULL,
-          closed_at integer,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS table_settlements (
-          store_id text DEFAULT 'main' NOT NULL,
-          session_id text NOT NULL,
-          table_id text NOT NULL,
-          table_name text NOT NULL,
-          customer_name text NOT NULL,
-          opened_at integer NOT NULL,
-          closed_at integer NOT NULL,
-          order_count integer NOT NULL,
-          valid_order_count integer NOT NULL,
-          cancelled_count integer NOT NULL,
-          total integer NOT NULL,
-          paid_total integer NOT NULL,
-          cancelled_total integer NOT NULL,
-          orders_json text NOT NULL,
-          PRIMARY KEY (store_id, session_id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS table_payment_receipts (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          request_id text NOT NULL,
-          request_hash text NOT NULL,
-          session_id text NOT NULL,
-          table_id text NOT NULL,
-          table_name text NOT NULL,
-          customer_name text NOT NULL,
-          order_ids_json text NOT NULL,
-          order_count integer NOT NULL,
-          amount integer NOT NULL,
-          payment_method text NOT NULL,
-          paid_at integer NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS table_transfers (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          request_id text NOT NULL,
-          request_hash text NOT NULL,
-          session_id text NOT NULL,
-          from_table_id text NOT NULL,
-          from_table_name text NOT NULL,
-          to_table_id text NOT NULL,
-          to_table_name text NOT NULL,
-          transferred_at integer NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS orders (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          code text NOT NULL,
-          table_id text NOT NULL,
-          table_name text NOT NULL,
-          dining_session_id text,
-          customer_name text DEFAULT '' NOT NULL,
-          client_token text NOT NULL,
-          request_key text NOT NULL,
-          request_hash text NOT NULL,
-          items text NOT NULL,
-          total integer NOT NULL,
-          note text DEFAULT '' NOT NULL,
-          status text DEFAULT 'new' NOT NULL,
-          paid integer DEFAULT 0 NOT NULL,
-          paid_at integer,
-          payment_method text DEFAULT 'unknown' NOT NULL,
-          cancel_reason text DEFAULT '' NOT NULL,
-          created_at integer NOT NULL,
-          updated_at integer NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS service_requests (
-          store_id text DEFAULT 'main' NOT NULL,
-          note text DEFAULT '' NOT NULL,
-          id text NOT NULL,
-          table_id text NOT NULL,
-          table_name text NOT NULL,
-          session_id text,
-          kind text NOT NULL,
-          status text DEFAULT 'open' NOT NULL,
-          created_at integer NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS staff_accounts (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          email text NOT NULL,
-          name text NOT NULL,
-          user_id text,
-          role text NOT NULL,
-          permissions_json text NOT NULL,
-          status text DEFAULT 'active' NOT NULL,
-          version integer DEFAULT 1 NOT NULL,
-          created_at integer NOT NULL,
-          updated_at integer NOT NULL,
-          last_login_at integer,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS staff_account_audit (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          actor_id text NOT NULL,
-          actor_email text NOT NULL,
-          account_id text NOT NULL,
-          account_email text NOT NULL,
-          action text NOT NULL,
-          before_json text,
-          after_json text NOT NULL,
-          created_at integer NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS staff_push_subscriptions (
-          store_id text DEFAULT 'main' NOT NULL,
-          id text NOT NULL,
-          user_id text NOT NULL,
-          staff_account_id text,
-          device_id text NOT NULL,
-          endpoint text NOT NULL,
-          endpoint_hash text NOT NULL,
-          p256dh text NOT NULL,
-          auth text NOT NULL,
-          created_at integer NOT NULL,
-          updated_at integer NOT NULL,
-          last_seen_at integer NOT NULL,
-          PRIMARY KEY (store_id, id)
-        )`),
-      ]);
+      for (const sql of PLATFORM_DDL) {
+        try {
+          await db.prepare(sql).run();
+        } catch (e) {
+          console.error("DDL execution failed for statement:", sql, e);
+        }
+      }
     }
     platformSchemaEnsured = true;
-  } catch {
-    // If table inspection fails (e.g. no DB binding), let downstream callers handle
+  } catch (err) {
+    console.error("ensurePlatformSchema check failed:", err);
+    throw err;
   }
 }
 
@@ -773,16 +611,17 @@ export async function changePassword(
   await logAuthAudit(identity.email, "password_changed");
 }
 
-export async function canBootstrap(): Promise<boolean> {
+export async function canBootstrap(): Promise<{ canBootstrap: boolean; error?: string }> {
   try {
     await ensurePlatformSchema();
     const db = rootDatabase();
     const count = await db
       .prepare("SELECT COUNT(*) as count FROM auth_credentials")
       .first<{ count: number }>();
-    return (count?.count ?? 0) === 0;
-  } catch {
-    return false;
+    return { canBootstrap: (count?.count ?? 0) === 0 };
+  } catch (err) {
+    console.error("canBootstrap error:", err);
+    return { canBootstrap: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
 

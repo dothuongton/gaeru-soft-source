@@ -338,7 +338,7 @@ async function handle(request:Request){
     return json({ok:true,access},200,{"Set-Cookie":result.cookie});
    }
    if(path==="auth/bootstrap-status"&&request.method==="GET"){
-    return json({canBootstrap:await canBootstrap()});
+    return json(await canBootstrap());
    }
    return json({error:"Thao tác không được hỗ trợ."},405);
   }

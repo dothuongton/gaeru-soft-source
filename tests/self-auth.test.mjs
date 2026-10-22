@@ -207,7 +207,7 @@ test("Bootstrap platform owner: can only bootstrap once, requires secret & STAFF
   const auth = load("lib/auth.ts");
 
   // Check initial bootstrap status
-  assert.equal(await auth.canBootstrap(), true);
+  assert.equal((await auth.canBootstrap()).canBootstrap, true);
 
   // Bootstrap with wrong secret -> 403
   await assert.rejects(
@@ -242,7 +242,7 @@ test("Bootstrap platform owner: can only bootstrap once, requires secret & STAFF
   assert.equal(boot.identity.mustChangePassword, false);
 
   // canBootstrap is now false
-  assert.equal(await auth.canBootstrap(), false);
+  assert.equal((await auth.canBootstrap()).canBootstrap, false);
 
   // Second bootstrap attempt is permanently rejected
   await assert.rejects(
