@@ -237,3 +237,12 @@ body:has(.admin-workspace) .pwa-update-banner>button{flex-shrink:0;min-height:44
  .app-shell[data-view="admin"] .admin-workspace{grid-template-rows:calc(74px + env(safe-area-inset-top)) minmax(0,1fr) calc(70px + max(20px,env(safe-area-inset-bottom)))}
  .app-shell[data-view="admin"] .aw-nav{padding-bottom:max(20px,env(safe-area-inset-bottom))}
 }
+
+/* Keep navigation labels above the iPhone home indicator even if its inset is reported as zero. */
+@media(max-width:767px){
+ .app-shell[data-view="admin"] .admin-workspace{--aw-nav-safe:max(34px,env(safe-area-inset-bottom));grid-template-rows:calc(74px + env(safe-area-inset-top)) minmax(0,1fr) calc(76px + var(--aw-nav-safe))}
+ .app-shell[data-view="admin"] .aw-nav{padding:6px 8px calc(8px + var(--aw-nav-safe));overflow:visible}
+ .app-shell[data-view="admin"] .aw-nav>button{min-height:52px;font-size:13px;gap:4px}
+ .app-shell[data-view="admin"] .aw-nav>button svg{width:24px;height:24px}
+}
+.app-shell[data-view="admin"]>.signin-container{height:100dvh;overflow:auto}

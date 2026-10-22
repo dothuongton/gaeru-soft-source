@@ -188,3 +188,22 @@ test("staff header has one audio-mode icon, push control, and support without a 
   assert.doesNotMatch(html,/Chạm để bật âm thanh|Nghe thử giọng đọc/);
  }
 });
+
+
+test("installed staff entry and sign-in redirects retain admin view and store",()=>{
+ const {staffManifest}=load("lib/pwa-manifest.ts");
+ const {staffReturnUrl}=load("lib/staff-return-url.ts");
+ for(const store of ["main","ola-quan"]){
+  const manifest=staffManifest(store),start=new URL(manifest.start_url,"https://example.test");
+  assert.equal(start.searchParams.get("view"),"admin");
+  assert.equal(start.searchParams.get("store")||"main",store);
+  assert.equal(manifest.scope,"/");
+  assert.equal(manifest.display,"standalone");
+ }
+ assert.equal(staffReturnUrl("/"),"/?view=admin");
+ assert.equal(staffReturnUrl("/?view=menu&store=ola-quan"),"/?view=admin&store=ola-quan");
+ assert.equal(staffReturnUrl("/?view=admin&tab=support&store=ola-quan"),"/?view=admin&tab=support&store=ola-quan");
+ assert.equal(staffReturnUrl("/gaeru"),"/gaeru");
+ for(const value of [null,"https://outside.test/","//outside.test/","/\\outside.test/","/signin"]){assert.equal(staffReturnUrl(value),"/?view=admin");}
+ assert.throws(()=>staffManifest("//outside.test"));
+});
