@@ -50,6 +50,7 @@ function loadApp(entry = "route") {
     adminDashboard: "lib/admin-dashboard.ts",
     staffPush: "lib/staff-push.ts",
     workerContext: "lib/worker-context.ts",
+    realtimeDo: "lib/realtime-do.ts",
   };
   function load(name) {
     if (cache.has(name)) return cache.get(name).exports;
@@ -88,6 +89,7 @@ function loadApp(entry = "route") {
       if (specifier === "@/lib/admin-dashboard" || specifier === "./admin-dashboard") return load("adminDashboard");
       if (specifier === "@/lib/staff-push" || specifier === "./staff-push") return load("staffPush");
       if (specifier === "@/lib/worker-context" || specifier === "./worker-context") return load("workerContext");
+      if (specifier === "@/lib/realtime-do" || specifier === "./realtime-do") return load("realtimeDo");
       if (specifier === "@block65/webcrypto-web-push") return {
         buildPushPayload: async () => ({
           headers: { authorization: "vapid t=test", ttl: "60", "content-encoding": "aes128gcm" },

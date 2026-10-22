@@ -8,6 +8,7 @@
   "keep_vars": true,
   "vars": {
     "AUTH_MODE": "self",
+    "ENABLE_REALTIME_DO": "false",
     "STAFF_EMAILS": "traichuoiprovjp@gmail.com,dothuongton@gmail.com,nhanvien1@gmail.com,quanly@gmail.com,im.dothien@gmail.com"
   },
   "d1_databases": [

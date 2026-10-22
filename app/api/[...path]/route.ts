@@ -1,4 +1,4 @@
-import {conditionalJson} from "@/lib/conditional-json";
+import {conditionalJson, conditionalJsonWithEtag} from "@/lib/conditional-json";
 import {inStore, currentStoreId} from "@/lib/store-database";
 import {resolveStore,listStores,createStore,updateStoreStatus,saveStoreBranding} from "@/lib/store-platform";
 import {database,seed,deviceIdentity,getTable,getMenu,getShop,publicOrder,json,readBody} from "@/lib/server";
@@ -14,7 +14,8 @@ import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromo
 import type {OrderStatus} from "@/lib/menu";
 import {getStaffAccess,updateOwnProfile,listStaffAccounts,createStaffAccount,updateStaffAccount} from "@/lib/staff-access";
 import {hasPermission,type Permission} from "@/lib/staff-permissions";
-import {adminDashboard} from "@/lib/admin-dashboard";
+import {adminDashboard, getBoardRevision} from "@/lib/admin-dashboard";
+import {handleRealtimeUpgrade, notifyRealtimeInvalidation} from "@/lib/realtime-do";
 import {getVapidConfig, subscribeStaffDevice, unsubscribeStaffDevice, getStaffSubscriptionStatus, dispatchStaffPush, sendTestPush} from "@/lib/staff-push";
 import {
   ensurePlatformSchema,
@@ -52,6 +53,7 @@ async function handleScoped(request:Request){
    if(path==="shop-info"){const [shop,themeSettings]=await Promise.all([getShop(),getThemeSettings()]);return json({shop:{...shop,logo:shop.logo?"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(shop):""},themeSettings});}
    if(path==="branding-icon"){const shop=await getShop();if(url.searchParams.has("v")&&url.searchParams.get("v")!==brandingRevision(shop))return json({error:"Ảnh thương hiệu đã thay đổi. Vui lòng tải lại trang."},404);const headers={"Cache-Control":url.searchParams.get("v")===brandingRevision(shop)?"public, max-age=31536000, immutable":"no-store","X-Content-Type-Options":"nosniff"};if(shop.logo){const binary=atob(shop.logo.split(",")[1]);return new Response(Uint8Array.from(binary,c=>c.charCodeAt(0)),{headers:{"Content-Type":"image/png",...headers}});}return new Response(shopIconSvg(shop.name),{headers:{"Content-Type":"image/svg+xml",...headers}});}
    if(path==="account")return json({access});
+   if(path==="realtime/ws")return handleRealtimeUpgrade(request,currentStoreId(),access);
    if(path==="stores")return json(await listStores(request));
    if(path==="admin/push/config")return json({enabled: getVapidConfig().enabled, vapidPublicKey: getVapidConfig().publicKey || null});
    if(path==="admin/push/status"){
@@ -68,8 +70,20 @@ async function handleScoped(request:Request){
    if(path==="admin/revenue/settlements"){allow("revenue.view");return json(await listSettlements(url.searchParams));}
    if(path.startsWith("admin/revenue/settlements/")&&!path.slice("admin/revenue/settlements/".length).includes("/")){allow("revenue.view");return json(await getSettlement(path.slice("admin/revenue/settlements/".length)));}
    if(path==="admin"){
-    const compact=url.searchParams.get("section")==="board",data=await adminDashboard(access!,!compact);
-    return conditionalJson(request,{...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop});
+    const compact=url.searchParams.get("section")==="board";
+    if(compact&&request.headers.has("If-None-Match")){
+     const revision=await getBoardRevision(access!,currentStoreId());
+     if(request.headers.get("If-None-Match")===revision){
+      return new Response(null,{status:304,headers:{"ETag":revision,"Cache-Control":"no-store","Vary":"Cookie","X-Content-Type-Options":"nosniff"}});
+     }
+    }
+    const data=await adminDashboard(access!,!compact);
+    const payload={...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop};
+    if(compact){
+     const revision=await getBoardRevision(access!,currentStoreId());
+     return conditionalJsonWithEtag(request,payload,revision);
+    }
+    return conditionalJson(request,payload);
    }
    return json({error:"Không tìm thấy nội dung."},404);
   }
@@ -134,6 +148,7 @@ async function handleScoped(request:Request){
   if(request.method==="POST"&&path==="table-session"){
    const table=await getTable(checkedText(b.tableToken,80,true)),result=await requestTableSession(request,table,b.customerName);
    if(result.created){
+    notifyRealtimeInvalidation(currentStoreId(),"board");
     dispatchStaffPush({
       storeId: currentStoreId(),
       requiredPermission: "tables.manage",
@@ -157,6 +172,7 @@ async function handleScoped(request:Request){
    const latest=await owned();
    if(changed.meta.changes===0&&latest?.status!=="cancelled")throw new OrderError("Đơn hoặc lượt bàn vừa thay đổi. Vui lòng tải lại; nếu quán đã nhận đơn, hãy liên hệ nhân viên.",409);
    if(!latest)throw new OrderError("Không tìm thấy đơn.",404);
+   if(changed.meta.changes>0)notifyRealtimeInvalidation(currentStoreId(),"orders");
    return json({order:publicOrder(latest),replayed:changed.meta.changes===0});
   }
   if(request.method==="POST"&&path==="orders"){
@@ -178,6 +194,7 @@ async function handleScoped(request:Request){
    if(!saved)throw new OrderError("Lượt phục vụ đã kết thúc hoặc kết nối bàn vừa thay đổi. Vui lòng tải lại trang.",403);
    if(!await matchesOrderHash(saved.request_hash,hash,session.id,b))throw new OrderError("Nội dung đơn đã thay đổi. Vui lòng thử lại.",409);
    if(orderInsert.meta.changes===1){
+    notifyRealtimeInvalidation(currentStoreId(),"orders");
     dispatchStaffPush({
       storeId: currentStoreId(),
       requiredPermission: "orders.view",
@@ -197,6 +214,7 @@ async function handleScoped(request:Request){
    // A duplicate live call is successful, but a close that won the race must reject this action.
    if(called.meta.changes===0)await requireActiveSession(request,table,session.id);
    else{
+    notifyRealtimeInvalidation(currentStoreId(),"board");
     const currentReq=await db.prepare("SELECT created_at FROM service_requests WHERE id = ?").bind(id).first<{created_at:number}>();
     const gen=currentReq?.created_at??Date.now();
     dispatchStaffPush({
@@ -211,9 +229,9 @@ async function handleScoped(request:Request){
    }
    return json({ok:true});
   }
-  if(request.method==="PATCH"&&path==="admin/session"){allow("tables.manage");const result=await updateTableSession(b.id,b.action);return json({ok:true,...result});}
-  if(request.method==="PATCH"&&path==="admin/table-payment"){allow("payments.collect");return json(await payTableBalance(b));}
-  if(request.method==="PATCH"&&path==="admin/table-transfer"){allow("tables.transfer");return json(await transferTable(b));}
+  if(request.method==="PATCH"&&path==="admin/session"){allow("tables.manage");const result=await updateTableSession(b.id,b.action);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,...result});}
+  if(request.method==="PATCH"&&path==="admin/table-payment"){allow("payments.collect");const res=await payTableBalance(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
+  if(request.method==="PATCH"&&path==="admin/table-transfer"){allow("tables.transfer");const res=await transferTable(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
   if(request.method==="PATCH"&&path==="admin/display-settings"){allow("settings.manage");return json(await saveDisplaySettings(b));}
   if(request.method==="PATCH"&&path==="admin/theme-settings"){allow("settings.manage");return json(await saveThemeSettings(b));}
   if(request.method==="PATCH"&&path==="admin/order"){
@@ -237,20 +255,20 @@ async function handleScoped(request:Request){
     const reason=b.status==="cancelled"?checkedText(b.reason,180,true):"";
     const changed=await db.prepare("UPDATE orders SET status = ?, cancel_reason = ?, updated_at = ? WHERE id = ? AND status = ?"+(b.status==="cancelled"?" AND paid = 0":"")).bind(b.status,reason,Date.now(),id,old.status).run();
     if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
-   }return json({ok:true});
+   }notifyRealtimeInvalidation(currentStoreId(),"orders");return json({ok:true});
   }
-  if(request.method==="PATCH"&&path==="admin/call"){allow("tables.manage");if(!Number.isInteger(b.createdAt))throw new OrderError("Yêu cầu hỗ trợ không hợp lệ.");const resolved=await db.prepare("UPDATE service_requests SET status = ? WHERE id = ? AND status = ? AND created_at = ?").bind("done",checkedText(b.id,60,true),"open",b.createdAt).run();if(resolved.meta.changes!==1)throw new OrderError("Yêu cầu đã thay đổi. Vui lòng tải lại.",409);return json({ok:true});}
+  if(request.method==="PATCH"&&path==="admin/call"){allow("tables.manage");if(!Number.isInteger(b.createdAt))throw new OrderError("Yêu cầu hỗ trợ không hợp lệ.");const resolved=await db.prepare("UPDATE service_requests SET status = ? WHERE id = ? AND status = ? AND created_at = ?").bind("done",checkedText(b.id,60,true),"open",b.createdAt).run();if(resolved.meta.changes!==1)throw new OrderError("Yêu cầu đã thay đổi. Vui lòng tải lại.",409);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true});}
   if(request.method==="PATCH"&&path==="admin/promotion"){
    allow("menu.manage");const id=checkedText(b.id,60,true);
    const item=await db.prepare("SELECT price FROM menu_items WHERE id = ?").bind(id).first<{price:number}>();
    if(!item)throw new OrderError("Không tìm thấy món.",404);
    const promotion=validatePromotion(b.promotion,item.price);
-   await db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion)).run();return json({ok:true});
+   await db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion)).run();notifyRealtimeInvalidation(currentStoreId(),"menu");return json({ok:true});
   }
   if(request.method==="PATCH"&&path==="admin/item"){
    allow("menu.manage");
    const id=checkedText(b.id??crypto.randomUUID(),60,true);
-   if(b.toggle!==undefined){if(b.toggle!==0&&b.toggle!==1)throw new OrderError("Trạng thái món không hợp lệ.");await db.prepare("UPDATE menu_items SET available = ? WHERE id = ?").bind(b.toggle,id).run();return json({ok:true});}
+   if(b.toggle!==undefined){if(b.toggle!==0&&b.toggle!==1)throw new OrderError("Trạng thái món không hợp lệ.");await db.prepare("UPDATE menu_items SET available = ? WHERE id = ?").bind(b.toggle,id).run();notifyRealtimeInvalidation(currentStoreId(),"menu");return json({ok:true});}
    if(b.available!==0&&b.available!==1)throw new OrderError("Vui lòng chọn trạng thái phục vụ của món.");
    const name=checkedText(b.name,80,true),description=checkedText(b.description??"",240),badge=checkedText(b.badge??"",32);
    if(!categories.some(c=>c.id===b.category&&c.id!=="all"))throw new OrderError("Nhóm món không hợp lệ.");if(!Number.isInteger(b.price)||b.price<1000||b.price>2000000)throw new OrderError("Giá món phải từ 1.000 đến 2.000.000 ₫.");
@@ -260,12 +278,12 @@ async function handleScoped(request:Request){
    const extras=b.extras===undefined?undefined:validateExtras(b.extras);
    const saved=await db.prepare("SELECT value FROM settings WHERE key = ?").bind("promotion:"+id).first<{value:string}>();
    const promotion=validatePromotion(b.promotion===undefined?(saved?JSON.parse(saved.value):null):b.promotion,b.price);
-   const itemWrite=db.prepare("INSERT INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, category = excluded.category, price = excluded.price, image = excluded.image, badge = excluded.badge, available = excluded.available").bind(id,name,description,b.category,b.price,image,badge,b.available===0?0:1,Date.now());await db.batch([itemWrite,...(extras===undefined?[]:[db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("extras:"+id,JSON.stringify(extras))]),db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion))]);return json({ok:true});
+   const itemWrite=db.prepare("INSERT INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, category = excluded.category, price = excluded.price, image = excluded.image, badge = excluded.badge, available = excluded.available").bind(id,name,description,b.category,b.price,image,badge,b.available===0?0:1,Date.now());await db.batch([itemWrite,...(extras===undefined?[]:[db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("extras:"+id,JSON.stringify(extras))]),db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion))]);notifyRealtimeInvalidation(currentStoreId(),"menu");return json({ok:true});
   }
   if(request.method==="PATCH"&&path==="admin/shop"){
    allow("settings.manage");
    if(typeof b.open!=="boolean")throw new OrderError("Trạng thái nhận món không hợp lệ.");
-   const previous=await getShop();const shop={logo:validateShopLogo(b.logo===undefined?previous.logo:b.logo),name:checkedText(b.name,40,true),tagline:checkedText(b.tagline,60),hours:checkedText(b.hours,50),address:checkedText(b.address,140),open:!!b.open};await saveStoreBranding(shop);return json({ok:true,shop});
+   const previous=await getShop();const shop={logo:validateShopLogo(b.logo===undefined?previous.logo:b.logo),name:checkedText(b.name,40,true),tagline:checkedText(b.tagline,60),hours:checkedText(b.hours,50),address:checkedText(b.address,140),open:!!b.open};await saveStoreBranding(shop);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,shop});
   }
   if(request.method==="PATCH"&&path==="admin/table"){
    allow("tables.manage");
@@ -276,6 +294,7 @@ async function handleScoped(request:Request){
     // One guarded write: a concurrently opened session or historical reference blocks deletion.
     const removed=await db.prepare("DELETE FROM dining_tables WHERE id = ? AND NOT EXISTS (SELECT 1 FROM table_sessions WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM orders WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM service_requests WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_settlements WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_payment_receipts WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_transfers WHERE from_table_id = ? OR to_table_id = ?)").bind(id,id,id,id,id,id,id,id).run();
     if(removed.meta.changes!==1)throw new OrderError("Bàn đang có lượt phục vụ hoặc lịch sử liên quan nên không thể xóa. Lịch sử được giữ nguyên; bạn vẫn có thể sửa tên bàn.",409);
+    notifyRealtimeInvalidation(currentStoreId(),"board");
     return json({ok:true});
    }
    const name=checkedText(b.name,30,true),zone=checkedText(b.zone,40,true);
@@ -296,10 +315,13 @@ async function handleScoped(request:Request){
     if(created.name!==name||created.zone!==zone)throw new OrderError("Yêu cầu này đã tạo bàn trước đó. Vui lòng tải lại danh sách bàn.",409);
     const table=await db.prepare("SELECT * FROM dining_tables WHERE id = ?").bind(created.id).first<{id:string;name:string;zone:string;token:string}>();
     if(!table)throw new OrderError("Không tìm thấy bàn đã tạo. Vui lòng tải lại.",404);
-    const replayed=table.token!==token;return json({ok:true,table,replayed},replayed?200:201);
+    const replayed=table.token!==token;
+    if(!replayed)notifyRealtimeInvalidation(currentStoreId(),"board");
+    return json({ok:true,table,replayed},replayed?200:201);
    }
    const updated=await db.prepare("UPDATE dining_tables SET name = ?, zone = ? WHERE id = ?").bind(name,zone,checkedText(b.id,10,true)).run();
    if(updated.meta.changes!==1)throw new OrderError("Không tìm thấy bàn cần cập nhật.",404);
+   notifyRealtimeInvalidation(currentStoreId(),"board");
    return json({ok:true});
   }
   return json({error:"Thao tác không được hỗ trợ."},405);
