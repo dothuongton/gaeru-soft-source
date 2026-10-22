@@ -15,6 +15,7 @@ import {withStore} from "@/lib/store-links";
 import {StaffAccountsPanel} from "./staff-accounts-panel";
 import {hasPermission,type Permission,type StaffAccess} from "@/lib/staff-permissions";
 import {OpenTableBoard} from "./open-table-board";
+import {OrderQueue} from "./order-queue";
 import {TablePaymentDialog} from "./table-payment-dialog";
 import {TableTransferDialog} from "./table-transfer-dialog";
 import {DisplaySettingsPanel} from "./display-settings-panel";
@@ -383,6 +384,10 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
  const [deleteTable,setDeleteTable]=useState<DiningTable|null>(null);
  const [tabReady,setTabReady]=useState(false);
  const [tab,setTab]=useState("orders"),[data,setData]=useState<AdminData|null>(null),[error,setError]=useState(""),[working,setWorking]=useState(false),[editItem,setEditItem]=useState<Partial<MenuItem>|null>(null),[editTable,setEditTable]=useState<(DiningTable & {creationRequestId?:string})|null>(null),[cancelOrder,setCancelOrder]=useState<Order|null>(null),[reason,setReason]=useState(""),[confirmPaid,setConfirmPaid]=useState<Order|null>(null),[lastSync,setLastSync]=useState(0),[origin,setOrigin]=useState("");
+ const [focusOrderId,setFocusOrderId]=useState<string|null>(null);
+ const [busyKeys,setBusyKeys]=useState<Set<string>>(new Set());
+ const busyKeysRef=useRef<Set<string>>(new Set());
+ const isBusy=useCallback((key:string)=>busyKeysRef.current.has(key),[]);
  useEffect(()=>{setMutationError("");},[editItem,editTable,cancelOrder,confirmPaid]);
  useEffect(()=>{const target=new URLSearchParams(window.location.search).get("tab");if(target&&["stores","orders","order-list","support","home","revenue","menu","promotions","tables","settings","accounts"].includes(target))setTab(target);setTabReady(true);},[]);
  function switchAdminTab(next:string){if(!adminTabs.some(item=>item.id===next))return;setTab(next);const url=new URL(window.location.href);url.searchParams.set("tab",next);window.history.replaceState({},"",url);}
@@ -391,6 +396,7 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
  const notifications=useAdminOrderAlerts(displaySettings.popupSeconds);
  const alertUserId=useRef(access?.userId??null);
  function openTable(tableId:string){if(!canOrders)return;setFocusTableId(tableId);setFocusRevision(n=>n+1);switchAdminTab("orders");}
+ function openOrder(orderId:string){if(!canOrders)return;setFocusOrderId(orderId);switchAdminTab("order-list");}
  const polling=useRef(false),reloadEpoch=useRef(0);
  const reload=useCallback(async(force=false)=>{
   if(!staff||(polling.current&&!force))return;
@@ -437,13 +443,21 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
   if(!hasPermission(access,reportOrderScope))setReportOrder(null);
   if(tabReady&&staff&&!adminTabs.some(item=>item.id===tab)&&adminTabs[0])switchAdminTab(adminTabs[0].id);
  },[permissionKey,reportOrderScope,tab,tabReady,notifications.restrictAlerts,notifications.resetAlerts]);
- async function mutate(path:string,body:unknown,message:string){
+ async function mutate(path:string,body:unknown,message:string,explicitKey?:string){
   const payload=body as Record<string,unknown>;
   const permission:Permission|undefined=path==="order"?(payload.action==="paid"?"payments.collect":payload.status==="cancelled"?"orders.cancel":"orders.manage"):({session:"tables.manage",table:"tables.manage",call:"tables.manage",item:"menu.manage",promotion:"menu.manage",shop:"settings.manage","display-settings":"settings.manage","theme-settings":"settings.manage"} as Record<string,Permission>)[path];
   if(!permission||!can(permission)){const message="Bạn chưa được cấp quyền thực hiện chức năng này.";setMutationError(message);notify(message);return false;}
-  if(workingRef.current)return false;workingRef.current=true;setWorking(true);setMutationError("");
+  const key=explicitKey||(payload.id?`${path}:${payload.id}`:path);
+  if(busyKeysRef.current.has(key))return false;
+  busyKeysRef.current.add(key);
+  setBusyKeys(new Set(busyKeysRef.current));
+  const isModalAction=(path!=="order"&&path!=="session"&&path!=="call")||payload.status==="cancelled"||payload.action==="paid";
+  if(isModalAction)setWorking(true);
+  setMutationError("");
+  let writeCommitted=false;
   try{
    const result=await api<{shop?:Shop;displaySettings?:DisplaySettings;themeSettings?:ThemeSettings}>("admin/"+path,{method:"PATCH",body:JSON.stringify(body)});
+   writeCommitted=true;
    if(path==="display-settings"&&result.displaySettings){
     const confirmed=normalizeDisplaySettings(result.displaySettings);
     onDisplaySettings(confirmed);setData(current=>current?{...current,displaySettings:confirmed}:current);
@@ -452,24 +466,101 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
     const confirmed=normalizeThemeSettings(result.themeSettings);
     onThemeSettings(confirmed);setData(current=>current?{...current,themeSettings:confirmed}:current);
    }
-   if(path==="shop"&&result.shop){onShopChange(result.shop);setData(current=>current?{...current,shop:result.shop!}:current);window.dispatchEvent(new Event("store-branding-updated"));}setRevenueRevision(n=>n+1);await reload(true);void onMenuRefresh().catch(()=>{});notify(message);return true;
-  }catch(e){setMutationError((e as Error).message);notify((e as Error).message);if(e instanceof ApiError&&e.status===403)void reload(true);return false;}finally{workingRef.current=false;setWorking(false);}
+   if(path==="shop"&&result.shop){onShopChange(result.shop);setData(current=>current?{...current,shop:result.shop!}:current);window.dispatchEvent(new Event("store-branding-updated"));}
+   if(path==="order"&&payload.status&&typeof payload.id==="string"){
+    setData(current=>{
+     if(!current)return current;
+     return {...current,orders:current.orders.map(o=>o.id===payload.id?{...o,status:payload.status as Order["status"]}:o)};
+    });
+   }
+   setRevenueRevision(n=>n+1);
+   try{
+    await reload(true);
+    void onMenuRefresh().catch(()=>{});
+    notify(message);
+   }catch{
+    notify("Đã cập nhật · Chưa tải được dữ liệu mới");
+   }
+   return true;
+  }catch(e){
+   if(writeCommitted){
+    notify("Đã cập nhật · Chưa tải được dữ liệu mới");
+    return true;
+   }
+   if(e instanceof ApiError){
+    if(e.status===409){
+     const msg=e.message||"Đơn đã được xử lý ở thiết bị khác.";
+     setMutationError(msg);notify(msg);void reload(true);return false;
+    }
+    if(e.status===403){
+     const msg="Bạn chưa được cấp quyền thực hiện chức năng này.";
+     setMutationError(msg);notify(msg);void reload(true);return false;
+    }
+    if(e.uncertain){
+     const msg="Chưa nhận được xác nhận từ máy chủ. Vui lòng kiểm tra trước khi thử lại.";
+     setMutationError(msg);notify(msg);return false;
+    }
+   }
+   const err=e as Error;
+   const isTimeout=err.name==="AbortError"||err.message?.toLowerCase().includes("timeout");
+   const msg=isTimeout?"Chưa nhận được xác nhận từ máy chủ. Vui lòng kiểm tra trước khi thử lại.":(err.message||"Thao tác không thành công.");
+   setMutationError(msg);notify(msg);return false;
+  }finally{
+   busyKeysRef.current.delete(key);
+   setBusyKeys(new Set(busyKeysRef.current));
+   if(isModalAction)setWorking(false);
+  }
  }
- async function sessionAction(id:string,action:"approve"|"reject"|"close"){return mutate("session",{id,action},action==="approve"?"Đã mở bàn. Máy của khách có thể gọi món.":action==="reject"?"Đã từ chối yêu cầu. Bàn sẵn sàng nhận khách mới.":"Đã đóng bàn. Quyết toán và lịch sử lượt khách đã được lưu trong mục Doanh thu.");}
+ async function sessionAction(id:string,action:"approve"|"reject"|"close"){return mutate("session",{id,action},action==="approve"?"Đã mở bàn. Máy của khách có thể gọi món.":action==="reject"?"Đã từ chối yêu cầu. Bàn sẵn sàng nhận khách mới.":"Đã đóng bàn. Quyết toán và lịch sử lượt khách đã được lưu trong mục Doanh thu.",`session:${id}`);}
  if(!ready)return <AdminStartup/>;
  if(!staff&&!access?.authenticated)return <SignInForm onAuthenticated={async()=>{const d=await api<{access:StaffAccess}>("account");onAccessChange(d.access);}}/>;
  if(!staff)return <main className="connection-error"><StoreSwitcher access={access}/><Store size={38}/><h1>{access?.authenticated?access.account?.status==="suspended"?"Tài khoản đã tạm khóa":"Tài khoản chưa được cấp quyền":"Khu vực dành cho nhân viên"}</h1><p>{access?.authenticated?<>{access.email}<br/>Liên hệ quản trị để được cấp hoặc mở lại quyền truy cập bằng đúng email này.</>:"Đăng nhập bằng tài khoản được quản trị cấp quyền để sử dụng các chức năng phục vụ quán."}</p>{access?.authenticated?<><button className="primary" onClick={()=>void onMenuRefresh().catch(error=>notify((error as Error).message))}><RefreshCw size={17}/>Kiểm tra lại quyền</button><button type="button" className="secondary" onClick={async()=>{try{await api("auth/logout",{method:"POST"});}catch{}window.location.href=withStore("/?view=admin&tab=accounts");}}><LogOut size={17}/>Đăng xuất để đổi tài khoản</button></>:<a className="primary" href={"/signin?returnTo="+encodeURIComponent(withStore("/?view=admin"))}><LogIn size={18}/>Đăng nhập quản trị</a>}</main>;
 
 
- return <AdminWorkspace shop={shop} access={access} tab={tab} onSwitch={switchAdminTab} onAudio={()=>setAudioSettings(true)} onListen={()=>{notifications.testSound();setKeepAwake(true);}} soundMode={notifications.soundMode} pushControl={<AdminPushToggle notify={notify} iconOnly/>} soundReady={notifications.soundReady} canOrders={canOrders} canTables={canTables} pendingCount={data?.sessions.filter(s=>s.status==="pending").length??0} supportCount={data?.calls.length??0}>
+ return <AdminWorkspace shop={shop} access={access} tab={tab} onSwitch={switchAdminTab} onAudio={()=>setAudioSettings(true)} onListen={()=>{notifications.testSound();setKeepAwake(true);}} soundMode={notifications.soundMode} pushControl={<AdminPushToggle notify={notify} iconOnly/>} soundReady={notifications.soundReady} canOrders={canOrders} canTables={canTables} pendingCount={data?.sessions.filter(s=>s.status==="pending").length??0} supportCount={data?.calls.length??0} newOrdersCount={data?.orders.filter(o=>o.status==="new").length??0}>
  {!operationalTabs.includes(tab)&&tab!=="home"&&<AdminBack title={adminTabs.find(t=>t.id===tab)?.label??"Cài đặt"} onBack={()=>switchAdminTab("home")}/>}
  {error&&<div className="inline-error"><AlertCircle size={18}/>{error}<button onClick={()=>void reload()}>Thử lại</button></div>}{!data?<div className="admin-loading"><LoaderCircle className="spin"/>Đang tải dữ liệu…</div>:<>
  {canTables&&tab==="tables"&&<OpeningRequests sessions={data.sessions} tables={data.tables} working={working} onAction={sessionAction}/>}
  {tab==="stores"&&access?.isOwner&&<StoreManagement/>}
  {tab==="home"&&<AdminSettingsHome tabs={[...adminTabs].sort((a,b)=>["tables","menu","settings","promotions","revenue","accounts","stores"].indexOf(a.id)-["tables","menu","settings","promotions","revenue","accounts","stores"].indexOf(b.id))} onSwitch={switchAdminTab} collected={data.stats.todayCollected} orderCount={data.stats.todayCount} activeTables={data.sessions.filter(s=>s.status==="active").length} updated={lastSync?time(lastSync):"…"}/>}
- {operationalTabs.includes(tab)&&canOrders&&<>
-  <OpenTableBoard key={tab} mode={tab==="support"?"support":tab==="order-list"?"orders":"tables"} initialView={tab==="orders"?"matrix":"manage"} permissions={access?.permissions??[]} tables={data.tables} sessions={data.sessions} orders={data.orders} calls={data.calls} transfers={data.transfers??[]} working={working} focusTableId={focusTableId} focusRevision={focusRevision} onSessionAction={sessionAction} onOrderStatus={(order,next)=>mutate("order",{id:order.id,status:next},"Đã cập nhật trạng thái đơn.")} onResolveCall={call=>mutate("call",{id:call.id,createdAt:call.created_at},"Đã xác nhận hỗ trợ bàn.")} onTransfer={setTransferSession} onCollect={openPayment} onCollectTable={setTablePaymentSessionId} onCancel={order=>{setCancelOrder(order);setReason("");}} onViewOrder={order=>{setReportOrderScope("orders.view");setReportOrder(order);}}/>
- </>}
+ {operationalTabs.includes(tab)&&canOrders&&(
+  tab==="order-list"?(
+   <OrderQueue
+    orders={data.orders}
+    tables={data.tables}
+    permissions={access?.permissions??[]}
+    onOrderStatus={(order,next)=>mutate("order",{id:order.id,status:next},"Đã cập nhật trạng thái đơn.",`order:${order.id}`)}
+    onCancel={order=>{setCancelOrder(order);setReason("");}}
+    onViewOrder={order=>{setReportOrderScope("orders.view");setReportOrder(order);}}
+    isBusy={id=>isBusy(`order:${id}`)}
+    focusOrderId={focusOrderId}
+   />
+  ):(
+   <OpenTableBoard
+    key={tab}
+    mode={tab==="support"?"support":"tables"}
+    initialView={tab==="orders"?"matrix":"manage"}
+    permissions={access?.permissions??[]}
+    tables={data.tables}
+    sessions={data.sessions}
+    orders={data.orders}
+    calls={data.calls}
+    transfers={data.transfers??[]}
+    working={working}
+    isBusy={id=>isBusy(`order:${id}`)||isBusy(`session:${id}`)||isBusy(`call:${id}`)}
+    focusTableId={focusTableId}
+    focusRevision={focusRevision}
+    onSessionAction={sessionAction}
+    onOrderStatus={(order,next)=>mutate("order",{id:order.id,status:next},"Đã cập nhật trạng thái đơn.",`order:${order.id}`)}
+    onResolveCall={call=>mutate("call",{id:call.id,createdAt:call.created_at},"Đã xác nhận hỗ trợ bàn.",`call:${call.id}`)}
+    onTransfer={setTransferSession}
+    onCollect={openPayment}
+    onCollectTable={setTablePaymentSessionId}
+    onCancel={order=>{setCancelOrder(order);setReason("");}}
+    onViewOrder={order=>{setReportOrderScope("orders.view");setReportOrder(order);}}
+   />
+  )
+ )}
 
  {tab==="revenue"&&canRevenue&&<RevenuePanel canCollect={canPay} tables={data.tables} refreshKey={revenueRevision} onCollect={openPayment} onViewOrder={order=>{setReportOrderScope("revenue.view");setReportOrder(order);}} notify={notify}/>}
  {["menu","promotions","settings"].includes(tab)&&data.compact&&<p role="status">Đang tải thiết lập cửa hàng…</p>}
@@ -480,7 +571,7 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
  {tab==="accounts"&&access&&<StaffAccountsPanel access={access} onAccessRefresh={async()=>{await reload(true);await onMenuRefresh();}}/>}
  </>}
  {audioSettings&&<Modal title="Thông báo & màn hình" onClose={()=>setAudioSettings(false)}><div className="form-body"><h3>Âm thanh thông báo</h3><div className="aw-sound-modes" role="group" aria-label="Chế độ âm thanh">{([{id:"voice",label:"Giọng nói"},{id:"chime",label:"Âm báo"},{id:"silent",label:"Im lặng"}] as const).map(mode=><button type="button" data-audio-test="true" key={mode.id} aria-pressed={notifications.soundMode===mode.id} className="secondary" onClick={()=>{notifications.setSoundMode(mode.id);if(mode.id!=="silent")notifications.testSound();}}>{mode.label}</button>)}</div><p role="status">{notifications.soundMode==="silent"?"Đã tắt âm thanh. Thông báo trên màn hình và push vẫn hoạt động.":notifications.soundMode==="chime"?"Chỉ phát âm báo, không đọc giọng nói.":notifications.audioNotice||"Giọng đọc đã sẵn sàng."}</p>{notifications.soundMode!=="silent"&&<button type="button" data-audio-test="true" className="primary" onClick={()=>{notifications.testSound();setKeepAwake(true);}}><Volume2 size={18}/>{notifications.soundMode==="chime"?"Nghe thử âm báo":"Nghe thử giọng đọc"}</button>}<AdminScreenAwake enabled={keepAwake} onChange={setKeepAwake}/><button type="button" className="secondary" onClick={()=>void reload()}><RefreshCw size={18}/>Tải lại dữ liệu</button><StoreSwitcher access={access}/><a className="secondary" href={withStore("/")}>Xem thực đơn khách</a></div></Modal>}
- {canOrders&&<NewOrderPopup alert={notifications.active} waiting={notifications.waiting} durationMs={notifications.durationMs} onDismiss={notifications.dismiss} onOpenTable={openTable}/>}
+ {canOrders&&<NewOrderPopup alert={notifications.active} waiting={notifications.waiting} durationMs={notifications.durationMs} onDismiss={notifications.dismiss} onOpenTable={openTable} onOpenOrder={openOrder} canSeeMoney={canPay}/>}
  {reportOrder&&can(reportOrderScope)&&<Modal title={"Chi tiết đơn #"+reportOrder.code} onClose={()=>setReportOrder(null)}><div className="report-order-detail"><OrderReceipt order={reportOrder}/></div></Modal>}
  {canTransfer&&transferSession&&data&&<TableTransferDialog session={transferSession} tables={data.tables} sessions={data.sessions} orders={data.orders} calls={data.calls} onClose={()=>setTransferSession(null)} onRefresh={async()=>{await reload(true);}} onTransferred={result=>{setTransferSession(null);setRevenueRevision(n=>n+1);setFocusTableId(result.session.table_id);setFocusRevision(n=>n+1);void reload(true);void onMenuRefresh().catch(()=>{});notify(result.replayed?"Đã đồng bộ vị trí hiện tại của lượt khách: "+result.session.table_name+".":"Đã chuyển "+result.transfer.fromTableName+" sang "+result.transfer.toTableName+". Toàn bộ thông tin lượt khách đã chuyển cùng bàn.");}}/>}
  {canPay&&tablePaymentSessionId&&<TablePaymentDialog sessionId={tablePaymentSessionId} onClose={()=>setTablePaymentSessionId(null)} onPaid={result=>{setTablePaymentSessionId(null);setRevenueRevision(n=>n+1);void reload(true);void onMenuRefresh().catch(()=>{});notify("Đã ghi nhận "+money(result.receipt.amount)+" cho "+result.receipt.orderIds.length+" lần gọi món của bàn.");}}/>}
