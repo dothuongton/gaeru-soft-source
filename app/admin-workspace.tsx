@@ -7,10 +7,33 @@ import type {StaffAccess} from "@/lib/staff-permissions";
 
 export const operationalTabs=["orders","order-list","support"];
 export function AdminWorkspace({shop,access,tab,onSwitch,onAudio,onListen,soundReady,canOrders,canTables,pendingCount,supportCount,children}:{shop:Shop;access:StaffAccess|null;tab:string;onSwitch:(tab:string)=>void;onAudio:()=>void;onListen:()=>void;soundReady:boolean;canOrders:boolean;canTables:boolean;pendingCount:number;supportCount:number;children:ReactNode}){
+ const workspace=useRef<HTMLElement>(null);
  const scroller=useRef<HTMLDivElement>(null);
+ useEffect(()=>{
+  const shell=workspace.current?.closest<HTMLElement>('.app-shell');
+  if(!shell)return;
+  const viewport=window.visualViewport;
+  const update=()=>{
+   // Preserve pinch zoom; resize only the normal-scale application viewport.
+   if(viewport && Math.abs(viewport.scale-1)>.01)return;
+   shell.style.setProperty('--aw-viewport-height',`${viewport?.height??window.innerHeight}px`);
+   shell.style.setProperty('--aw-viewport-top',`${viewport?.offsetTop??0}px`);
+  };
+  update();
+  window.addEventListener('resize',update);
+  viewport?.addEventListener('resize',update);
+  viewport?.addEventListener('scroll',update);
+  return()=>{
+   window.removeEventListener('resize',update);
+   viewport?.removeEventListener('resize',update);
+   viewport?.removeEventListener('scroll',update);
+   shell.style.removeProperty('--aw-viewport-height');
+   shell.style.removeProperty('--aw-viewport-top');
+  };
+ },[]);
  useEffect(()=>{scroller.current?.scrollTo({top:0,behavior:"instant"});},[tab]);
  const settings=!operationalTabs.includes(tab);
- return <section className="admin-workspace" aria-label={shop.name+" · Quản trị cửa hàng"}>
+ return <section ref={workspace} className="admin-workspace" aria-label={shop.name+" · Quản trị cửa hàng"}>
   <header className="aw-header"><button type="button" className="aw-brand" onClick={()=>onSwitch("accounts")} aria-label="Tài khoản và thông tin cửa hàng"><span className="aw-logo">{shop.logo?<img src={shop.logo} alt=""/>:shopInitials(shop.name)}</span><span><strong>{shop.name}</strong><small>{access?.profile?.fullName||access?.account?.name||(access?.isOwner?"Chủ cửa hàng":"Nhân viên")}</small></span></button><div className="aw-header-actions">{(canOrders||canTables)&&<><button type="button" className={"aw-icon "+(soundReady?"sound-ready":"needs-gesture")} onClick={onAudio} aria-label="Thiết lập thông báo tiếng Việt" aria-pressed={soundReady}><Mic size={20}/></button><button type="button" className={"aw-icon "+(soundReady?"sound-ready":"needs-gesture")} data-audio-test="true" onClick={onListen} aria-label="Nghe thử giọng đọc"><Volume2 size={20}/></button></>}{canOrders&&<button type="button" className="aw-icon" onClick={()=>onSwitch("support")} aria-label={"Hỗ trợ · "+supportCount+" yêu cầu"}><Bell size={20}/>{supportCount>0&&<span className="aw-dot"/>}</button>}</div></header>
   <nav className="aw-nav" aria-label="Điều hướng quản trị">{[{id:"orders",label:"Bàn",icon:Table2,allowed:canOrders,count:pendingCount},{id:"order-list",label:"Đơn món",icon:UtensilsCrossed,allowed:canOrders,count:0},{id:"support",label:"Hỗ trợ",icon:Bell,allowed:canOrders,count:supportCount},{id:"home",label:"Cài đặt",icon:Settings2,allowed:true,count:0}].filter(item=>item.allowed).map(item=><button key={item.id} type="button" onClick={()=>onSwitch(item.id)} className={(item.id==="home"?settings:tab===item.id)?"active":""} aria-current={(item.id==="home"?settings:tab===item.id)?"page":undefined}><span><item.icon size={22}/>{item.count>0&&<b>{item.count>99?"99+":item.count}</b>}</span><span>{item.label}</span></button>)}</nav>
   <div className="aw-content" ref={scroller} id="admin-content">
