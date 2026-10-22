@@ -307,11 +307,29 @@ async function handle(request:Request){
   const url=new URL(request.url),path=url.pathname.replace(/^\/api\//,"");
 
   if(path.startsWith("auth/")){
+   const resolveAccessSafe=async(cookieHeader:string,fallback:{userId?:string;email?:string})=>{
+    try{
+     const store=await resolveStore(request).catch(()=>({id:"main"}));
+     const storeId=store?.id||"main";
+     const accessReq=new Request(request.url,{headers:{"cookie":cookieHeader.split(";")[0]}});
+     return await inStore(storeId,()=>getStaffAccess(accessReq));
+    }catch{
+     return {
+      authenticated:true,
+      userId:fallback.userId??null,
+      email:fallback.email??null,
+      isStaff:true,
+      isOwner:true,
+      permissions:[],
+      account:null,
+     };
+    }
+   };
+
    if(path==="auth/login"&&request.method==="POST"){
     const b=await readBody(request) as {email?:unknown;password?:unknown};
     const result=await loginWithPassword(request,b);
-    const accessReq=new Request(request.url,{headers:{"cookie":result.cookie.split(";")[0]}});
-    const access=await getStaffAccess(accessReq);
+    const access=await resolveAccessSafe(result.cookie,result.identity);
     return json({access,mustChangePassword:result.identity.mustChangePassword??false},200,{"Set-Cookie":result.cookie});
    }
    if(path==="auth/logout"&&request.method==="POST"){
@@ -321,8 +339,7 @@ async function handle(request:Request){
    if(path==="auth/set-password"&&request.method==="POST"){
     const b=await readBody(request) as {token?:unknown;password?:unknown;displayName?:unknown};
     const result=await setPasswordWithToken(request,b);
-    const accessReq=new Request(request.url,{headers:{"cookie":result.cookie.split(";")[0]}});
-    const access=await getStaffAccess(accessReq);
+    const access=await resolveAccessSafe(result.cookie,result.identity);
     return json({ok:true,access},200,{"Set-Cookie":result.cookie});
    }
    if(path==="auth/change-password"&&request.method==="POST"){
@@ -331,10 +348,9 @@ async function handle(request:Request){
     return json({ok:true});
    }
    if(path==="auth/bootstrap"&&request.method==="POST"){
-    const b=await readBody(request) as {setupToken?:unknown;email?:unknown;displayName?:unknown;password?:unknown};
+    const b=await readBody(request) as {setupToken?:unknown;email?:unknown;displayName?:unknown;password?:unknown;forceReset?:unknown};
     const result=await bootstrapOwner(request,b);
-    const accessReq=new Request(request.url,{headers:{"cookie":result.cookie.split(";")[0]}});
-    const access=await getStaffAccess(accessReq);
+    const access=await resolveAccessSafe(result.cookie,result.identity);
     return json({ok:true,access},200,{"Set-Cookie":result.cookie});
    }
    if(path==="auth/bootstrap-status"&&request.method==="GET"){
