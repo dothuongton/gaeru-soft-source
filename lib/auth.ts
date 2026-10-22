@@ -236,7 +236,18 @@ export async function logAuthAudit(
   }
 }
 
+const requestIdentityCache = new WeakMap<Request, Promise<AuthIdentity | null>>();
+
 export async function resolveIdentity(request: Request): Promise<AuthIdentity | null> {
+  let cached = requestIdentityCache.get(request);
+  if (!cached) {
+    cached = resolveIdentityInternal(request);
+    requestIdentityCache.set(request, cached);
+  }
+  return cached;
+}
+
+async function resolveIdentityInternal(request: Request): Promise<AuthIdentity | null> {
   // 1. Sites gateway headers take precedence if present
   const sitesUserId = request.headers.get("oai-authenticated-user-id")?.trim();
   const sitesEmail = normalizeStaffEmail(

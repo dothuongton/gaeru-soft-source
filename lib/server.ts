@@ -1,4 +1,4 @@
-import {storeDatabase,currentStoreId} from "./store-database";
+import {storeDatabase,currentStoreId,rootDatabase} from "./store-database";
 import { defaultShop, sampleMenu, OrderError } from "./menu";
 import type { MenuItem, DiningTable, Shop, Order } from "./menu";
 export const database=storeDatabase;
@@ -15,12 +15,65 @@ export async function deviceIdentity(request:Request,issue=false):Promise<{hash:
  const hash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,"0")).join("");
  return {hash,setCookie};
 }
+const seededStoresByDb = new WeakMap<object, Set<string>>();
+const seedInFlightByDb = new WeakMap<object, Map<string, Promise<void>>>();
+
+export function invalidateSeed(storeId?: string) {
+ try {
+  const db = rootDatabase() as object;
+  if (storeId) {
+   seededStoresByDb.get(db)?.delete(storeId);
+   seedInFlightByDb.get(db)?.delete(storeId);
+  } else {
+   seededStoresByDb.get(db)?.clear();
+   seedInFlightByDb.get(db)?.clear();
+  }
+ } catch {}
+}
+
 export async function seed(){
- const db=database();if(await db.prepare("SELECT value FROM settings WHERE key = ?").bind("seeded-v1").first())return;
- const stmts=[db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("shop",JSON.stringify(defaultShop))];
- for(const m of currentStoreId()==="main"?sampleMenu:[])stmts.push(db.prepare("INSERT OR IGNORE INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?)").bind(m.id,m.name,m.description,m.category,m.price,m.image,m.badge,m.available,m.sort));
- for(let i=1;i<=12;i++)stmts.push(db.prepare("INSERT OR IGNORE INTO dining_tables (id,name,zone,token) VALUES (?,?,?,?)").bind(String(i),"Bàn "+String(i).padStart(2,"0"),i<=8?"Sảnh chính":"Sân vườn",crypto.randomUUID().replaceAll("-","")+crypto.randomUUID().slice(0,8)));
- stmts.push(db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("seeded-v1","1"));await db.batch(stmts);
+ const storeId = currentStoreId();
+ let dbObj: object;
+ try {
+  dbObj = rootDatabase() as object;
+ } catch {
+  return;
+ }
+ let seeded = seededStoresByDb.get(dbObj);
+ if (!seeded) {
+  seeded = new Set();
+  seededStoresByDb.set(dbObj, seeded);
+ }
+ if (seeded.has(storeId)) return;
+
+ let inFlightMap = seedInFlightByDb.get(dbObj);
+ if (!inFlightMap) {
+  inFlightMap = new Map();
+  seedInFlightByDb.set(dbObj, inFlightMap);
+ }
+ let inFlight = inFlightMap.get(storeId);
+ if (!inFlight) {
+  inFlight = (async () => {
+   const db = database();
+   const existing = await db.prepare("SELECT value FROM settings WHERE key = ?").bind("seeded-v1").first();
+   if (!existing) {
+    const stmts = [db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("shop", JSON.stringify(defaultShop))];
+    for (const m of storeId === "main" ? sampleMenu : []) {
+     stmts.push(db.prepare("INSERT OR IGNORE INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?)").bind(m.id, m.name, m.description, m.category, m.price, m.image, m.badge, m.available, m.sort));
+    }
+    for (let i = 1; i <= 12; i++) {
+     stmts.push(db.prepare("INSERT OR IGNORE INTO dining_tables (id,name,zone,token) VALUES (?,?,?,?)").bind(String(i), "Bàn " + String(i).padStart(2, "0"), i <= 8 ? "Sảnh chính" : "Sân vườn", crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().slice(0, 8)));
+    }
+    stmts.push(db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("seeded-v1", "1"));
+    await db.batch(stmts);
+   }
+   seeded.add(storeId);
+  })().finally(() => {
+   inFlightMap.delete(storeId);
+  });
+  inFlightMap.set(storeId, inFlight);
+ }
+ await inFlight;
 }
 export async function getMenu(){
  const db=database();const [menu,promos,extraRows]=await Promise.all([db.prepare("SELECT * FROM menu_items ORDER BY sort,name").all<MenuItem>(),db.prepare("SELECT key,value FROM settings WHERE key LIKE 'promotion:%'").all<{key:string;value:string}>(),db.prepare("SELECT key,value FROM settings WHERE key LIKE 'extras:%'").all<{key:string;value:string}>()]);
