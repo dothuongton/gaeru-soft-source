@@ -174,3 +174,17 @@ test("the staff shell keeps only four main navigation items and permission-gates
  assert.doesNotMatch(restricted,/Nghe thử giọng đọc/);
  assert.deepEqual(buttons(restricted.match(/<nav[\s\S]*?<\/nav>/)[0]),["Cài đặt"]);
 });
+
+
+test("staff header has one audio-mode icon, push control, and support without a persistent audio banner",()=>{
+ const {AdminWorkspace}=load("app/admin-workspace.tsx");
+ const {defaultShop}=load("lib/menu.ts");
+ const unused=()=>{};
+ for(const [soundMode,label] of [["voice","Giọng nói"],["chime","Âm báo"],["silent","Im lặng"]]){
+  const html=render(AdminWorkspace,{shop:defaultShop,access:staffAccess("manager"),tab:"orders",onSwitch:unused,onAudio:unused,onListen:unused,soundReady:false,soundMode,pushControl:React.createElement("button",null,"Bật thông báo đẩy"),canOrders:true,canTables:true,pendingCount:0,supportCount:0});
+  const header=html.match(/<header[\s\S]*?<\/header>/)[0];
+  assert.match(header,new RegExp("Âm thanh: "+label));
+  assert.equal((header.match(/<button/g)||[]).length,4,"account, audio, push and support only");
+  assert.doesNotMatch(html,/Chạm để bật âm thanh|Nghe thử giọng đọc/);
+ }
+});

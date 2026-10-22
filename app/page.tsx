@@ -11,5 +11,7 @@ export async function generateMetadata({searchParams}:{searchParams:Promise<Reco
 export default async function Home({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){
  const params=await searchParams;
  const initialView=params.view==="admin"?"admin":params.view==="orders"?"orders":params.view==="about"?"about":"menu";
+ // The admin bootstrap already returns branding; do not serialize its base64 logo twice.
+ if(initialView==="admin")return <OrderingApp initialView="admin"/>;
  try{const storeId=typeof params.store==="string"?params.store:"main";const store=await resolveStore(new Request("https://site.local/?store="+encodeURIComponent(storeId)));const shop=await inStore(store.id,()=>getShop());return <OrderingApp initialShop={shop} initialView={initialView}/>;}catch{return <OrderingApp initialView={initialView}/>;}
 }

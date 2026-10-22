@@ -224,3 +224,16 @@ body:has(.admin-workspace) .pwa-update-banner>button{flex-shrink:0;min-height:44
  .app-shell[data-view="admin"] .aw-table-heading>.otb-zone>select{font-size:12px;padding-left:7px;padding-right:18px}
  .app-shell[data-view="admin"] .aw-table-heading .aw-view-toggle>button{width:30px}
 }
+
+.app-shell[data-view="admin"] .aw-push-control{position:relative;display:flex;flex-shrink:0}
+.app-shell[data-view="admin"] .aw-push-control>button,.app-shell[data-view="admin"] .aw-push-control>div>button{display:flex;align-items:center;justify-content:center;width:40px;min-width:40px;height:44px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--aw-accent)}
+.app-shell[data-view="admin"] .aw-push-control>button>span,.app-shell[data-view="admin"] .aw-push-control>div>button>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.app-shell[data-view="admin"] .aw-push-control [role="menu"]{position:absolute;right:0;top:48px;width:240px;padding:10px;background:white;border:1px solid var(--aw-line);border-radius:12px;box-shadow:0 6px 20px #0002;z-index:50}
+.app-shell[data-view="admin"] .aw-push-control [role="menu"] button{display:flex;gap:8px;align-items:center;width:100%;padding:8px;text-align:left;font-size:13px}
+.app-shell[data-view="admin"] .aw-sound-modes{display:flex;flex-wrap:wrap;gap:8px}
+.app-shell[data-view="admin"] .aw-sound-modes [aria-pressed="true"]{outline:2px solid var(--aw-accent);background:var(--aw-soft)}
+
+@media(display-mode:standalone) and (max-width:767px){
+ .app-shell[data-view="admin"] .admin-workspace{grid-template-rows:calc(74px + env(safe-area-inset-top)) minmax(0,1fr) calc(70px + max(20px,env(safe-area-inset-bottom)))}
+ .app-shell[data-view="admin"] .aw-nav{padding-bottom:max(20px,env(safe-area-inset-bottom))}
+}

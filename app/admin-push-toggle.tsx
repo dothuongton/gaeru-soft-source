@@ -36,7 +36,10 @@ const withTimeout = <T,>(promise: Promise<T>, ms = 5000): Promise<T> => {
 
 type PushState = "checking" | "unsupported" | "server_disabled" | "denied" | "ready" | "subscribed";
 
-export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
+export function AdminPushToggle({notify,iconOnly=false}:{notify:(msg:string)=>void;iconOnly?:boolean}){
+ return <span className={iconOnly?"aw-push-control":""}><PushControl notify={notify}/></span>;
+}
+function PushControl({ notify }: { notify: (msg: string) => void }) {
   const [state, setState] = useState<PushState>("checking");
   const [loading, setLoading] = useState(false);
   const [testTesting, setTestTesting] = useState(false);

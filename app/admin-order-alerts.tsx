@@ -17,6 +17,12 @@ type PlaybackNavigator = Navigator & {audioSession?: {type: string}};
 type AudioReadiness = {ready: boolean; needsGesture: boolean};
 
 export function useAdminOrderAlerts(popupSeconds = 3) {
+  const [soundMode,setMode]=useState<"voice"|"chime"|"silent">("voice");
+  const modeRef=useRef<"voice"|"chime"|"silent">("voice");
+  const chimePlaying=useRef(false);
+  useEffect(()=>{
+    try{const saved=localStorage.getItem("gaeru:audio-mode");if(saved==="voice"||saved==="chime"||saved==="silent"){modeRef.current=saved;setMode(saved);}}catch{/* Storage can be unavailable. */}
+  },[]);
   const [queue, setQueue] = useState<AdminAlert[]>([]);
   const [readiness, setReadiness] = useState<AudioReadiness>({ready: false, needsGesture: true});
   const [voiceNotice, setVoiceNotice] = useState("");
@@ -61,7 +67,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     if (!mounted.current) return;
     const supported = typeof Audio !== "undefined" || ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window);
     const hasSpeech = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
-    const ready = hasSpeech ? speechReady.current : mediaReady.current;
+    const ready = modeRef.current==="silent" || (modeRef.current==="chime"?mediaReady.current:hasSpeech ? speechReady.current : mediaReady.current);
     const next = {ready, needsGesture: supported && (!ready || speechNeedsGesture.current)};
     setReadiness(previous => previous.ready === next.ready && previous.needsGesture === next.needsGesture ? previous : next);
     if (!supported) setVoiceNotice("Trình duyệt này chưa hỗ trợ âm báo. Mở trang quản trị bằng trình duyệt có hỗ trợ âm thanh.");
@@ -85,6 +91,12 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
       } catch { /* A detached browser speech engine may already be stopped. */ }
     }
   }, []);
+
+  const setSoundMode=useCallback((mode:"voice"|"chime"|"silent")=>{
+    stopSpeech();mediaChime.current?.stop();audioQueue.current.reconcile([]);
+    modeRef.current=mode;setMode(mode);audioBlocked.current=false;reportReadiness();
+    try{localStorage.setItem("gaeru:audio-mode",mode);}catch{/* Session state remains usable. */}
+  },[stopSpeech,reportReadiness]);
 
   const continueAudio = useCallback((delay = 180) => {
     if (nextSpeechTimer.current) clearTimeout(nextSpeechTimer.current);
@@ -112,7 +124,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
   }, [reportReadiness]);
 
   const chime = useCallback((): Promise<boolean> => {
-    if (!mounted.current || document.visibilityState !== "visible") return Promise.resolve(false);
+    if (modeRef.current==="silent" || !mounted.current || document.visibilityState !== "visible") return Promise.resolve(false);
     prepareAudio();
     try {
       const session = (navigator as PlaybackNavigator).audioSession;
@@ -272,15 +284,27 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
   }, [chime, continueAudio, reportReadiness, stopSpeech]);
 
   const announceCurrent = useCallback((retry = false) => {
+    if(modeRef.current==="silent"){audioQueue.current.reconcile([]);return;}
+    if(modeRef.current==="chime"){
+      const current=audioQueue.current.first();
+      if(!current||chimePlaying.current||!mounted.current||!visibleRef.current)return;
+      chimePlaying.current=true;
+      void chime().then(played=>{
+        if(played){audioQueue.current.complete(current.id);continueAudio();}
+      }).finally(()=>{chimePlaying.current=false;});
+      return;
+    }
     if (!mounted.current || !visibleRef.current || utterance.current || (audioBlocked.current && !retry)) return;
     if (retry) audioBlocked.current = false;
     const current = audioQueue.current.first();
     if (current) speak(adminAlertSpeech(current), current);
-  }, [speak]);
+  }, [speak,chime,continueAudio]);
   retryCurrent.current = () => announceCurrent(true);
 
   const activateSound = useCallback(() => {
+    if(modeRef.current==="silent")return;
     prepareAudio();
+    if(modeRef.current==="chime"){void chime();return;}
     // Let an audible table announcement finish; it already confirms playback.
     if (playingAlert.current && announcements.current.hasStarted(playingAlert.current.id)) {
       return;
@@ -293,7 +317,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     } else {
       speak("Đây là giọng đọc thông báo. Bàn số một cần hỗ trợ.", undefined, true);
     }
-  }, [prepareAudio, speak, stopSpeech]);
+  }, [prepareAudio, speak, stopSpeech,chime]);
 
   const observeDashboard = useCallback((orders: Order[], sessions: OpeningSession[], calls: ServiceRequest[] = []) => {
     const permittedOrders = scope.current.orders ? orders : [];
@@ -380,7 +404,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     };
     let lastGestureAt = -Infinity;
     const onGesture = (event: Event) => {
-      if (!event.isTrusted || document.visibilityState !== "visible") return;
+      if (modeRef.current==="silent" || !event.isTrusted || document.visibilityState !== "visible") return;
       // The explicit sound button owns its click; do not cancel it on bubbling.
       if (event.target instanceof Element && event.target.closest("[data-audio-test]")) return;
       const now = performance.now();
@@ -430,7 +454,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
   const audioNotice = [mediaNotice, speechNotice].filter(Boolean).join(" ");
   const chooseVoice = (id: string) => {stopSpeech(); selectedVoiceRef.current = id; setSelectedVoice(id); speechReady.current = false; setVoiceNotice("Đã chọn giọng. Chạm Thử giọng đọc để kiểm tra."); reportReadiness();};
   const testChime = () => {stopSpeech(); setMediaNotice("Đang thử chuông…"); void chime();};
-  return {active: visible ? active : null, durationMs, waiting: Math.max(0, queue.length - 1), soundEnabled: true, soundReady: readiness.ready, soundNeedsGesture: readiness.needsGesture, audioNotice, toggleSound: activateSound, testSound: activateSound, testChime, voiceOptions, selectedVoice, chooseVoice, voiceSummary, observeDashboard, restrictAlerts, resetAlerts, observeOrders, chime, dismiss};
+  return {soundMode,setSoundMode,active: visible ? active : null, durationMs, waiting: Math.max(0, queue.length - 1), soundEnabled: soundMode!=="silent", soundReady: readiness.ready, soundNeedsGesture: readiness.needsGesture, audioNotice, toggleSound: activateSound, testSound: activateSound, testChime, voiceOptions, selectedVoice, chooseVoice, voiceSummary, observeDashboard, restrictAlerts, resetAlerts, observeOrders, chime, dismiss};
 }
 
 export function NewOrderPopup({alert, waiting, durationMs = ADMIN_ALERT_DURATION_MS, onDismiss, onOpenTable}: {alert: AdminAlert | null; waiting: number; durationMs?: number; onDismiss: () => void; onOpenTable: (tableId: string) => void}) {
