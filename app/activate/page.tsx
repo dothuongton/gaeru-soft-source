@@ -20,7 +20,7 @@ export default function ActivatePage() {
 
   // Bootstrap fields
   const [setupToken, setSetupToken] = useState("gaeru_sec_8f3a9b2e7c1d4a6e8b0d5f2a7e4c1b9d");
-  const [ownerEmail, setOwnerEmail] = useState("dothuongton@gmail.com");
+  const [ownerEmail, setOwnerEmail] = useState("traichuoiprovjp@gmail.com");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

@@ -39,14 +39,12 @@ export function isSelfAuthMode(): boolean {
 }
 
 export function getOwnerEmails(): string[] {
-  if (env.STAFF_EMAILS === undefined) return ["dothuongton@gmail.com"];
-  return Array.from(
-    new Set(
-      env.STAFF_EMAILS.split(",")
-        .map(normalizeStaffEmail)
-        .filter((email): email is string => !!email)
-    )
-  );
+  const defaults = ["traichuoiprovjp@gmail.com", "dothuongton@gmail.com"];
+  if (!env.STAFF_EMAILS) return defaults;
+  const list = env.STAFF_EMAILS.split(",")
+    .map(normalizeStaffEmail)
+    .filter((email): email is string => !!email);
+  return Array.from(new Set([...defaults, ...list]));
 }
 
 const PLATFORM_DDL = [
@@ -741,6 +739,12 @@ export async function bootstrapOwner(
         .bind(email, userId, now, now),
     ]);
   }
+
+  // Clear any lockout attempt for this owner email
+  await db
+    .prepare("DELETE FROM auth_login_attempts WHERE attempt_key = ?")
+    .bind(email)
+    .run();
 
   await logAuthAudit(email, "bootstrap_owner", { isForceReset });
 

@@ -122,7 +122,7 @@ export default function SignInPage() {
                 type="email"
                 required
                 autoComplete="email"
-                placeholder="chuban@example.com"
+                placeholder="traichuoiprovjp@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
