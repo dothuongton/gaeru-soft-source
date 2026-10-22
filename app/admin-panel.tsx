@@ -645,6 +645,7 @@ export default function AdminPanel({
                 focusRevision={focusRevision}
                 onSessionAction={sessionAction}
                 onOrderStatus={(order, next) => mutate("order", { id: order.id, status: next }, "Đã cập nhật trạng thái đơn.", `order:${order.id}`)}
+                onLineStatus={(orderId, orderLineId, toStatus, count) => mutate("order", { id: orderId, orderLineId, action: "line_transition", toStatus, count }, "Đã cập nhật tiến độ món.", `order:${orderId}`)}
                 onResolveCall={call => mutate("call", { id: call.id, createdAt: call.created_at }, "Đã xác nhận hỗ trợ bàn.", `call:${call.id}`)}
                 onTransfer={setTransferSession}
                 onCollect={openPayment}

@@ -10,8 +10,8 @@ import {transferTable} from "@/lib/table-transfer-server";
 import {getDisplaySettings,saveDisplaySettings} from "@/lib/display-settings-server";
 import {getThemeSettings,saveThemeSettings} from "@/lib/theme-settings-server";
 import {readQrEntry} from "@/lib/qr-entry";
-import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories,brandingRevision,publicShop} from "@/lib/menu";
-import type {OrderStatus} from "@/lib/menu";
+import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories,brandingRevision,publicShop,normalizeOrderItem,projectOrderStatus,canCancelOrder} from "@/lib/menu";
+import type {OrderStatus,OrderItem} from "@/lib/menu";
 import {getStaffAccess,updateOwnProfile,listStaffAccounts,createStaffAccount,updateStaffAccount} from "@/lib/staff-access";
 import {hasPermission,type Permission} from "@/lib/staff-permissions";
 import {adminDashboard, getBoardRevision} from "@/lib/admin-dashboard";
@@ -249,11 +249,64 @@ async function handleScoped(request:Request){
       if(latest?.paid!==1||latest.status==="cancelled")throw new OrderError("Đơn vừa bị hủy. Chưa ghi nhận thanh toán.",409);
      }
     }
+   }else if(b.action==="line_transition"||b.orderLineId){
+    if(old.status==="cancelled")throw new OrderError("Đơn đã hủy không thể cập nhật món.",409);
+    const lineId=checkedText(b.orderLineId,60,true);
+    const toStatus=b.toStatus as OrderStatus;
+    if(!["preparing","ready","served"].includes(toStatus))throw new OrderError("Trạng thái món không hợp lệ.");
+    const rawItems=JSON.parse(old.items as string) as OrderItem[];
+    let found=false;
+    const updatedItems=rawItems.map((item,idx)=>{
+     const norm=normalizeOrderItem(item,old.status as OrderStatus,idx);
+     if(norm.orderLineId!==lineId&&norm.itemId!==b.itemId)return norm;
+     found=true;
+     let avail=0;
+     if(toStatus==="preparing")avail=norm.newCount;
+     else if(toStatus==="ready")avail=norm.preparingCount>0?norm.preparingCount:norm.newCount;
+     else if(toStatus==="served")avail=norm.readyCount>0?norm.readyCount:norm.preparingCount>0?norm.preparingCount:norm.newCount;
+     const count=typeof b.count==="number"&&b.count>0?Math.min(b.count,avail):avail;
+     if(count<=0)throw new OrderError("Món đã được cập nhật trạng thái khác. Vui lòng tải lại trang.",409);
+     if(toStatus==="preparing"){
+      return {...norm,newCount:norm.newCount-count,preparingCount:norm.preparingCount+count};
+     }
+     if(toStatus==="ready"){
+      const fromPrep=Math.min(count,norm.preparingCount);
+      const fromNew=count-fromPrep;
+      return {...norm,newCount:norm.newCount-fromNew,preparingCount:norm.preparingCount-fromPrep,readyCount:norm.readyCount+count};
+     }
+     if(toStatus==="served"){
+      const fromReady=Math.min(count,norm.readyCount);
+      const rem=count-fromReady;
+      const fromPrep=Math.min(rem,norm.preparingCount);
+      const fromNew=rem-fromPrep;
+      return {...norm,newCount:norm.newCount-fromNew,preparingCount:norm.preparingCount-fromPrep,readyCount:norm.readyCount-fromReady,servedCount:norm.servedCount+count};
+     }
+     return norm;
+    });
+    if(!found)throw new OrderError("Không tìm thấy món cần cập nhật.",404);
+    const nextStatus=projectOrderStatus(updatedItems,old.status as OrderStatus);
+    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, updated_at = ? WHERE id = ? AND updated_at = ?").bind(JSON.stringify(updatedItems),nextStatus,Date.now(),id,old.updated_at).run();
+    if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
    }else{
     if(old.paid&&b.status==="cancelled")throw new OrderError("Đơn đã thanh toán. Vui lòng xử lý hoàn tiền trực tiếp tại quầy.",409);
+    if(b.status==="cancelled"&&!canCancelOrder(publicOrder(old)))throw new OrderError("Đơn đã có món được phục vụ hoặc đã thanh toán. Không thể hủy.",409);
     if(!canTransition(old.status as OrderStatus,b.status))throw new OrderError("Trạng thái đơn đã thay đổi. Vui lòng tải lại.",409);
+    const rawItems=JSON.parse(old.items as string) as OrderItem[];
+    const updatedItems=rawItems.map((item,idx)=>{
+     const norm=normalizeOrderItem(item,old.status as OrderStatus,idx);
+     if(b.status==="preparing"){
+      return {...norm,newCount:0,preparingCount:norm.quantity-norm.readyCount-norm.servedCount};
+     }
+     if(b.status==="ready"){
+      return {...norm,newCount:0,preparingCount:0,readyCount:norm.quantity-norm.servedCount};
+     }
+     if(b.status==="served"){
+      return {...norm,newCount:0,preparingCount:0,readyCount:0,servedCount:norm.quantity};
+     }
+     return norm;
+    });
     const reason=b.status==="cancelled"?checkedText(b.reason,180,true):"";
-    const changed=await db.prepare("UPDATE orders SET status = ?, cancel_reason = ?, updated_at = ? WHERE id = ? AND status = ?"+(b.status==="cancelled"?" AND paid = 0":"")).bind(b.status,reason,Date.now(),id,old.status).run();
+    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, cancel_reason = ?, updated_at = ? WHERE id = ? AND status = ?"+(b.status==="cancelled"?" AND paid = 0":"")).bind(JSON.stringify(updatedItems),b.status,reason,Date.now(),id,old.status).run();
     if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
    }notifyRealtimeInvalidation(currentStoreId(),"orders");return json({ok:true});
   }
