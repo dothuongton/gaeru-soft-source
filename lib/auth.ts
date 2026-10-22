@@ -611,14 +611,15 @@ export async function changePassword(
   await logAuthAudit(identity.email, "password_changed");
 }
 
-export async function canBootstrap(): Promise<{ canBootstrap: boolean; error?: string }> {
+export async function canBootstrap(): Promise<{ canBootstrap: boolean; existingAccounts?: boolean; count?: number; error?: string }> {
   try {
     await ensurePlatformSchema();
     const db = rootDatabase();
     const count = await db
       .prepare("SELECT COUNT(*) as count FROM auth_credentials")
       .first<{ count: number }>();
-    return { canBootstrap: (count?.count ?? 0) === 0 };
+    const total = Number(count?.count ?? 0);
+    return { canBootstrap: total === 0, existingAccounts: total > 0, count: total };
   } catch (err) {
     console.error("canBootstrap error:", err);
     return { canBootstrap: false, error: err instanceof Error ? err.message : String(err) };
@@ -627,17 +628,26 @@ export async function canBootstrap(): Promise<{ canBootstrap: boolean; error?: s
 
 export async function bootstrapOwner(
   request: Request,
-  body: { setupToken?: unknown; email?: unknown; displayName?: unknown; password?: unknown }
+  body: {
+    setupToken?: unknown;
+    email?: unknown;
+    displayName?: unknown;
+    password?: unknown;
+    forceReset?: unknown;
+  }
 ): Promise<{ identity: AuthIdentity; cookie: string }> {
   await ensurePlatformSchema();
   const db = rootDatabase();
   const now = Date.now();
 
-  // Check 1: Credentials table must be empty
+  // Check 1: Credentials table must be empty unless forceReset is explicitly requested
   const count = await db
     .prepare("SELECT COUNT(*) as count FROM auth_credentials")
     .first<{ count: number }>();
-  if ((count?.count ?? 0) > 0) {
+  const total = Number(count?.count ?? 0);
+  const isForceReset = Boolean(body.forceReset);
+
+  if (total > 0 && !isForceReset) {
     throw new OrderError(
       "Hệ thống đã có tài khoản quản trị. Không thể khởi tạo lại.",
       403
@@ -678,20 +688,41 @@ export async function bootstrapOwner(
   const userId = bound?.user_id || crypto.randomUUID();
   const passwordHash = await hashPassword(password);
 
-  await db.batch([
-    db
-      .prepare(
-        "INSERT INTO auth_credentials (email, user_id, password_hash, display_name, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)"
-      )
-      .bind(email, userId, passwordHash, displayName, now, now),
-    db
-      .prepare(
-        "INSERT OR IGNORE INTO staff_owner_bindings (email, user_id, created_at, last_login_at) VALUES (?, ?, ?, ?)"
-      )
-      .bind(email, userId, now, now),
-  ]);
+  if (total > 0 && isForceReset) {
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO auth_credentials (email, user_id, password_hash, display_name, must_change_password, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 0, ?, ?)
+           ON CONFLICT(email) DO UPDATE SET
+             password_hash = excluded.password_hash,
+             display_name = CASE WHEN excluded.display_name != '' THEN excluded.display_name ELSE auth_credentials.display_name END,
+             must_change_password = 0,
+             updated_at = excluded.updated_at`
+        )
+        .bind(email, userId, passwordHash, displayName, now, now),
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO staff_owner_bindings (email, user_id, created_at, last_login_at) VALUES (?, ?, ?, ?)"
+        )
+        .bind(email, userId, now, now),
+    ]);
+  } else {
+    await db.batch([
+      db
+        .prepare(
+          "INSERT INTO auth_credentials (email, user_id, password_hash, display_name, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)"
+        )
+        .bind(email, userId, passwordHash, displayName, now, now),
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO staff_owner_bindings (email, user_id, created_at, last_login_at) VALUES (?, ?, ?, ?)"
+        )
+        .bind(email, userId, now, now),
+    ]);
+  }
 
-  await logAuthAudit(email, "bootstrap_owner");
+  await logAuthAudit(email, "bootstrap_owner", { isForceReset });
 
   const sessionToken = generateRandomToken(32);
   const sessionTokenHash = await sha256Hex(sessionToken);

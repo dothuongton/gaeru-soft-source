@@ -102,6 +102,7 @@ export default function ActivatePage() {
           email: ownerEmail.trim(),
           displayName: displayName.trim(),
           password,
+          forceReset: true,
         }),
       });
       setSuccess("Khởi tạo hệ thống thành công! Đang chuyển hướng vào trang quản trị…");
@@ -131,21 +132,15 @@ export default function ActivatePage() {
       <div className="activate-card">
         <div className="activate-header">
           <div className="activate-logo">
-            {token ? <UserCheck size={28} /> : canBootstrap ? <ShieldCheck size={28} /> : <ShieldAlert size={28} />}
+            {token ? <UserCheck size={28} /> : <ShieldCheck size={28} />}
           </div>
           <h1 className="activate-title">
-            {token
-              ? "Kích hoạt tài khoản"
-              : canBootstrap
-              ? "Khởi tạo quản trị viên"
-              : "Kích hoạt tài khoản GAERU"}
+            {token ? "Kích hoạt tài khoản nhân viên" : "Khởi tạo / Đặt mật khẩu Quản trị viên"}
           </h1>
           <p className="activate-subtitle">
             {token
               ? "Thiết lập mật khẩu đăng nhập để kích hoạt tài khoản của bạn."
-              : canBootstrap
-              ? "Hệ thống chưa có tài khoản quản trị. Vui lòng nhập thông tin bootstrap ban đầu."
-              : "Liên kết kích hoạt cần có mã token được cấp bởi quản trị viên."}
+              : "Dành cho chủ sở hữu: thiết lập mật khẩu bằng SETUP_TOKEN để truy cập trang quản trị."}
           </p>
         </div>
 
@@ -216,7 +211,7 @@ export default function ActivatePage() {
               <span>{loading ? "Đang xử lý…" : "Đặt mật khẩu & Kích hoạt"}</span>
             </button>
           </form>
-        ) : canBootstrap ? (
+        ) : (
           <form className="activate-form" onSubmit={handleBootstrap}>
             <div className="activate-field">
               <label htmlFor="setup-token">Mã bí mật khởi tạo (SETUP_TOKEN)</label>
@@ -249,7 +244,7 @@ export default function ActivatePage() {
             </div>
 
             <div className="activate-field">
-              <label htmlFor="bootstrap-name">Họ tên hiển thị</label>
+              <label htmlFor="bootstrap-name">Họ tên hiển thị (tuỳ chọn)</label>
               <input
                 id="bootstrap-name"
                 type="text"
@@ -275,6 +270,7 @@ export default function ActivatePage() {
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
               />
+              <small>Mật khẩu an toàn từ 12 đến 128 ký tự</small>
             </div>
 
             <div className="activate-field">
@@ -295,21 +291,9 @@ export default function ActivatePage() {
 
             <button type="submit" className="activate-btn" disabled={loading}>
               {loading ? <LoaderCircle className="spin" size={18} /> : <ShieldCheck size={18} />}
-              <span>{loading ? "Đang khởi tạo…" : "Khởi tạo quản trị viên & Đăng nhập"}</span>
+              <span>{loading ? "Đang xử lý…" : "Khởi tạo / Đặt lại mật khẩu & Đăng nhập"}</span>
             </button>
           </form>
-        ) : (
-          <div className="activate-notice-box">
-            <p>
-              <strong>Cần liên kết kích hoạt hợp lệ</strong>
-            </p>
-            <p>
-              Để kích hoạt tài khoản hoặc đặt lại mật khẩu, vui lòng liên hệ quản trị viên cửa hàng để nhận liên kết kích hoạt có chứa mã token an toàn.
-            </p>
-            <p>
-              Nếu anh/chị đã có tài khoản và mật khẩu, vui lòng vào trang đăng nhập bên dưới.
-            </p>
-          </div>
         )}
 
         <div className="activate-footer">
