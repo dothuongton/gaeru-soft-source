@@ -119,7 +119,7 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
  useEffect(()=>{
   if(!ready)return;
   document.title=shop.name+" — "+(view==="admin"?"Quản trị cửa hàng":"Gọi món tại bàn");
-  const href=withStore("/api/branding-icon?v="+brandingRevision(shop));
+  const href = shop.logo && shop.logo.includes("/api/branding-icon") ? withStore(shop.logo) : withStore("/api/branding-icon?v=" + brandingRevision(shop));
   for(const rel of ["icon","shortcut icon","apple-touch-icon"]){let link=document.head.querySelector<HTMLLinkElement>('link[rel="'+rel+'"]');if(!link){link=document.createElement("link");link.rel=rel;document.head.appendChild(link);}link.href=href;link.removeAttribute("type");}
   const description=document.head.querySelector('meta[name="description"]');if(description)description.setAttribute("content",shop.name+" · "+shop.tagline+" · "+shop.address);
  },[shop,view,ready]);

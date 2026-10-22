@@ -81,7 +81,16 @@ export function validateShopLogo(value:unknown):string{
  if(size(16)<1||size(20)<1||size(16)>512||size(20)>512)throw new OrderError("Logo cần được thu gọn trước khi lưu.");
  return value;
 }
-export function brandingRevision(shop:Shop){let hash=2166136261;for(const character of shop.name+"|"+(shop.logo??""))hash=Math.imul(hash^character.charCodeAt(0),16777619);return (hash>>>0).toString(36);}
+export function brandingRevision(shop:Shop){
+ const logo = shop.logo ?? "";
+ if (logo.includes("/api/branding-icon")) {
+  const match = logo.match(/[?&]v=([a-z0-9]+)/);
+  if (match) return match[1];
+ }
+ let hash=2166136261;
+ for(const character of shop.name+"|"+logo)hash=Math.imul(hash^character.charCodeAt(0),16777619);
+ return (hash>>>0).toString(36);
+}
 export function shopIconSvg(name:string){const initials=shopInitials(name).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[c]!));return `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#244f3c"/><text x="64" y="70" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="50" fill="#ffffff">${initials}</text></svg>`;}
 
 export function validateExtras(raw:unknown):MenuExtra[]{
