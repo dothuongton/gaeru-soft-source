@@ -20,14 +20,22 @@ test("calculateBackoff: exponential backoff on consecutive failures", () => {
   assert.equal(d3, 40000);
 });
 
-test("calculateBackoff: respects maxIntervalMs cap", () => {
-  const delay = calculateBackoff(5000, 10, 30000, 0);
-  assert.equal(delay, 30000, "Should be capped at maxIntervalMs");
+test("calculateBackoff: respects maxIntervalMs cap and retains jitter under cap", () => {
+  const delays = new Set();
+  for (let i = 0; i < 30; i++) {
+    const delay = calculateBackoff(5000, 10, 30000, 0.25);
+    assert.ok(delay >= 22500 && delay <= 30000, `Delay ${delay} should be within [22500, 30000]`);
+    delays.add(delay);
+  }
+  assert.ok(delays.size > 1, "Delays under sustained cap must exhibit jitter, not collapse to identical values");
 });
 
-test("calculateBackoff: honors Retry-After header duration", () => {
+test("calculateBackoff: honors Retry-After header duration without truncating below server instruction", () => {
   const delay = calculateBackoff(5000, 2, 60000, 0.25, 12000);
-  assert.equal(delay, 12000, "Should honor retryAfterMs");
+  assert.ok(delay >= 12000 && delay <= 13200, `Delay ${delay} should honor retryAfterMs`);
+
+  const longDelay = calculateBackoff(5000, 2, 30000, 0.25, 120000);
+  assert.ok(longDelay >= 120000, `Long Retry-After (120s) must not be truncated to 30s cap`);
 });
 
 test("AdaptiveScheduler: prevents overlapping tasks and enforces single in-flight", async () => {

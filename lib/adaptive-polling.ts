@@ -36,7 +36,9 @@ export function calculateBackoff(
   retryAfterMs?: number | null
 ): number {
   if (typeof retryAfterMs === "number" && retryAfterMs > 0) {
-    return Math.min(retryAfterMs, maxIntervalMs);
+    // Never shorten server-enforced cooldown; add 0-10% positive jitter to desynchronize retrying clients
+    const jitter = Math.random() * (retryAfterMs * 0.1);
+    return Math.round(retryAfterMs + jitter);
   }
   if (attempt <= 0) {
     const jitter = (Math.random() * 2 - 1) * (baseIntervalMs * 0.1);
@@ -45,8 +47,10 @@ export function calculateBackoff(
   const factor = Math.min(attempt, 5);
   const expDelay = baseIntervalMs * Math.pow(2, factor);
   const capped = Math.min(expDelay, maxIntervalMs);
-  const jitter = Math.random() * (capped * jitterRatio);
-  return Math.round(Math.min(maxIntervalMs, capped + jitter));
+  // Distribute jitter within [capped * (1 - jitterRatio), capped] to guarantee jitter even under sustained cap
+  const minDelay = Math.max(baseIntervalMs, capped * (1 - jitterRatio));
+  const delay = minDelay + Math.random() * (capped - minDelay);
+  return Math.round(delay);
 }
 
 export class AdaptiveScheduler {
@@ -115,6 +119,14 @@ export class AdaptiveScheduler {
   public start(): void {
     this.stopped = false;
     this.attempt = 0;
+    if (this.pauseWhenHidden && typeof document !== "undefined" && document.visibilityState === "hidden") {
+      this.emitStatus("paused", 0);
+      return;
+    }
+    if (this.isOffline) {
+      this.emitStatus("paused", 0);
+      return;
+    }
     this.execute();
   }
 
@@ -229,6 +241,14 @@ export class AdaptiveScheduler {
 
     if (this.queuedImmediate) {
       this.queuedImmediate = false;
+      if (this.pauseWhenHidden && typeof document !== "undefined" && document.visibilityState === "hidden") {
+        this.emitStatus("paused", 0);
+        return;
+      }
+      if (this.isOffline) {
+        this.emitStatus("paused", 0);
+        return;
+      }
       this.execute();
       return;
     }

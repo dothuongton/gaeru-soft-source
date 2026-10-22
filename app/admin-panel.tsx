@@ -56,7 +56,7 @@ import { StoreSwitcher } from "./store-management";
 import { withStore } from "@/lib/store-links";
 import { hasPermission, type Permission, type StaffAccess } from "@/lib/staff-permissions";
 import { OpenTableBoard } from "./open-table-board";
-import { OrderQueue } from "./order-queue";
+import { OrderQueue, type MutationOutcome } from "./order-queue";
 import { DEFAULT_THEME_SETTINGS, normalizeThemeSettings, type ThemeSettings } from "@/lib/theme-settings";
 import { DEFAULT_DISPLAY_SETTINGS, normalizeDisplaySettings, type DisplaySettings } from "@/lib/display-settings";
 import { api, ApiError } from "@/lib/api-client";
@@ -230,9 +230,9 @@ export default function AdminPanel({
     switchAdminTab("orders");
   }
 
-  function openOrder(orderId: string) {
+  function openOrder(orderId?: string) {
     if (!canOrders) return;
-    setFocusOrderId(orderId);
+    if (orderId) setFocusOrderId(orderId);
     switchAdminTab("order-list");
   }
 
@@ -240,22 +240,22 @@ export default function AdminPanel({
     reloadEpoch = useRef(0);
 
   const reload = useCallback(
-    async (force = false) => {
-      if (!staff || (polling.current && !force)) return;
+    async (force = false, throwOnError = false): Promise<AdminData | null> => {
+      if (!staff || (polling.current && !force)) return null;
       const epoch = ++reloadEpoch.current;
       polling.current = true;
       try {
         const boot = !bootstrapConsumed.current && initialDashboard;
         bootstrapConsumed.current = true;
         const d = await (boot || api<AdminData>(["menu", "promotions", "settings"].includes(tab) ? "admin" : "admin?section=board"));
-        if (epoch !== reloadEpoch.current) return;
+        if (epoch !== reloadEpoch.current) return null;
         const current = liveAccess.current;
         if (
           !current?.isStaff ||
           d.access.userId !== current.userId ||
           (d.access.account?.id === current.account?.id && (d.access.account?.version ?? 0) < (current.account?.version ?? 0))
         )
-          return;
+          return null;
         const allowOrders = hasPermission(d.access, "orders.view"),
           allowOpenings = hasPermission(d.access, "tables.manage");
         notifications.restrictAlerts(allowOrders, allowOpenings);
@@ -267,6 +267,7 @@ export default function AdminPanel({
         onAccessChange(d.access);
         setLastSync(Date.now());
         setError("");
+        return d;
       } catch (e) {
         if (epoch === reloadEpoch.current) {
           setError((e as Error).message);
@@ -286,6 +287,8 @@ export default function AdminPanel({
             } catch {}
           }
         }
+        if (throwOnError) throw e;
+        return null;
       } finally {
         if (epoch === reloadEpoch.current) polling.current = false;
       }
@@ -300,7 +303,7 @@ export default function AdminPanel({
     if (!pollerRef.current) {
       pollerRef.current = new AdaptiveScheduler({
         task: async () => {
-          await reload();
+          await reload(false, true);
         },
         baseIntervalMs: baseInterval,
         maxIntervalMs: 30000,
@@ -348,7 +351,12 @@ export default function AdminPanel({
     if (tabReady && staff && !adminTabs.some(item => item.id === tab) && adminTabs[0]) switchAdminTab(adminTabs[0].id);
   }, [permissionKey, reportOrderScope, tab, tabReady, notifications.restrictAlerts, notifications.resetAlerts]);
 
-  async function mutate(path: string, body: unknown, message: string, explicitKey?: string) {
+  async function mutate(path: string, body: unknown, message: string, explicitKey?: string): Promise<boolean> {
+    const outcome = await mutateWithOutcome(path, body, message, explicitKey);
+    return typeof outcome === "boolean" ? outcome : (outcome.state === "confirmed" || outcome.state === "committed_stale");
+  }
+
+  async function mutateWithOutcome(path: string, body: unknown, message: string, explicitKey?: string): Promise<MutationOutcome> {
     const payload = body as Record<string, unknown>;
     const permission: Permission | undefined =
       path === "order"
@@ -371,10 +379,16 @@ export default function AdminPanel({
       const message = "Bạn chưa được cấp quyền thực hiện chức năng này.";
       setMutationError(message);
       notify(message);
-      return false;
+      return { state: "rejected", message };
+    }
+    if (tab === "account-manager" && !hasPermission(liveAccess.current, "staff.manage")) {
+      const message = "Bạn chưa được cấp quyền quản lý tài khoản nhân viên.";
+      setMutationError(message);
+      notify(message);
+      return { state: "rejected", message };
     }
     const key = explicitKey || (payload.id ? `${path}:${payload.id}` : path);
-    if (busyKeysRef.current.has(key)) return false;
+    if (busyKeysRef.current.has(key)) return { state: "rejected", message: "Thao tác đang được xử lý..." };
     busyKeysRef.current.add(key);
     setBusyKeys(new Set(busyKeysRef.current));
     const isModalAction = (path !== "order" && path !== "session" && path !== "call") || payload.status === "cancelled" || payload.action === "paid";
@@ -413,39 +427,40 @@ export default function AdminPanel({
       }
       setRevenueRevision(n => n + 1);
       try {
-        await reload(true);
+        await reload(true, true);
         pollerRef.current?.resetSchedule();
         void onMenuRefresh().catch(() => {});
         notify(message);
+        return { state: "confirmed" };
       } catch {
         notify("Đã cập nhật · Chưa tải được dữ liệu mới");
+        return { state: "committed_stale", message: "Đã cập nhật · Chưa tải được dữ liệu mới" };
       }
-      return true;
     } catch (e) {
       if (writeCommitted) {
         notify("Đã cập nhật · Chưa tải được dữ liệu mới");
-        return true;
+        return { state: "committed_stale", message: "Đã cập nhật · Chưa tải được dữ liệu mới" };
       }
       if (e instanceof ApiError) {
         if (e.status === 409) {
           const msg = e.message || "Đơn đã được xử lý ở thiết bị khác.";
           setMutationError(msg);
           notify(msg);
-          void reload(true);
-          return false;
+          void reload(true).catch(() => {});
+          return { state: "rejected", message: msg };
         }
         if (e.status === 403) {
           const msg = "Bạn chưa được cấp quyền thực hiện chức năng này.";
           setMutationError(msg);
           notify(msg);
-          void reload(true);
-          return false;
+          void reload(true).catch(() => {});
+          return { state: "rejected", message: msg };
         }
         if (e.uncertain) {
           const msg = "Chưa nhận được xác nhận từ máy chủ. Vui lòng kiểm tra trước khi thử lại.";
           setMutationError(msg);
           notify(msg);
-          return false;
+          return { state: "uncertain", message: msg };
         }
       }
       const err = e as Error;
@@ -453,7 +468,7 @@ export default function AdminPanel({
       const msg = isTimeout ? "Chưa nhận được xác nhận từ máy chủ. Vui lòng kiểm tra trước khi thử lại." : err.message || "Thao tác không thành công.";
       setMutationError(msg);
       notify(msg);
-      return false;
+      return { state: isTimeout ? "uncertain" : "rejected", message: msg };
     } finally {
       busyKeysRef.current.delete(key);
       setBusyKeys(new Set(busyKeysRef.current));
@@ -600,7 +615,7 @@ export default function AdminPanel({
                 orders={data.orders}
                 tables={data.tables}
                 permissions={access?.permissions ?? []}
-                onOrderStatus={(order, next) => mutate("order", { id: order.id, status: next }, "Đã cập nhật trạng thái đơn.", `order:${order.id}`)}
+                onOrderStatus={(order, next) => mutateWithOutcome("order", { id: order.id, status: next }, "Đã cập nhật trạng thái đơn.", `order:${order.id}`)}
                 onCancel={order => {
                   setCancelOrder(order);
                   setReason("");
@@ -611,6 +626,7 @@ export default function AdminPanel({
                 }}
                 isBusy={id => isBusy(`order:${id}`)}
                 focusOrderId={focusOrderId}
+                onFocusHandled={() => setFocusOrderId(null)}
               />
             ) : (
               <OpenTableBoard
@@ -869,7 +885,7 @@ export default function AdminPanel({
           </div>
         </Modal>
       )}
-      {canOrders && (
+      {canOrders && !tablePaymentSessionId && !reportOrder && !transferSession && !confirmPaid && !editItem && !editTable && !cancelOrder && (
         <NewOrderPopup
           alert={notifications.active}
           waiting={notifications.waiting}
@@ -931,7 +947,7 @@ export default function AdminPanel({
               const session = data?.sessions.find(s => s.id === tablePaymentSessionId);
               if (session) {
                 setTablePaymentSessionId(null);
-                await sessionAction(session, "close");
+                await sessionAction(session.id, "close");
               }
             } : undefined}
             onClose={() => setTablePaymentSessionId(null)}

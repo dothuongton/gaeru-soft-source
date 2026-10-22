@@ -121,7 +121,7 @@ export async function handleRealtimeUpgrade(
   }
   const realtimeBinding = (env as Record<string, unknown>).REALTIME_ROOM as {
     idFromName: (name: string) => unknown;
-    get: (id: unknown) => { fetch: (url: string, init?: RequestInit) => Promise<Response> };
+    get: (id: unknown) => { fetch: (url: string | Request, init?: RequestInit) => Promise<Response> };
   } | undefined;
   if (!realtimeBinding) {
     throw new OrderError("Dịch vụ phòng thời gian thực chưa sẵn sàng.", 503);
@@ -129,7 +129,7 @@ export async function handleRealtimeUpgrade(
 
   const id = realtimeBinding.idFromName(storeId);
   const stub = realtimeBinding.get(id);
-  return stub.fetch(new Request("https://realtime/websocket", {
+  return stub.fetch("https://realtime/websocket", {
     headers: request.headers,
-  }));
+  });
 }

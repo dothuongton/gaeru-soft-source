@@ -8,15 +8,23 @@ import "./order-queue.css";
 
 export type OrderQueueFilter = "all" | "new" | "preparing" | "ready" | "history";
 
+export type MutationOutcome =
+  | { state: "confirmed" }
+  | { state: "uncertain"; message: string }
+  | { state: "rejected"; message: string }
+  | { state: "committed_stale"; message: string }
+  | boolean;
+
 export type OrderQueueProps = {
   orders: Order[];
   tables: DiningTable[];
   permissions: Permission[];
-  onOrderStatus: (order: Order, next: OrderStatus) => Promise<boolean>;
+  onOrderStatus: (order: Order, next: OrderStatus) => Promise<MutationOutcome>;
   onCancel: (order: Order) => void;
   onViewOrder: (order: Order) => void;
   isBusy?: (id: string) => boolean;
   focusOrderId?: string | null;
+  onFocusHandled?: () => void;
   initialFilter?: OrderQueueFilter;
 };
 
@@ -33,6 +41,7 @@ export function OrderQueue({
   onViewOrder,
   isBusy,
   focusOrderId,
+  onFocusHandled,
   initialFilter,
 }: OrderQueueProps) {
   const [filter, setFilter] = useState<OrderQueueFilter>(() => {
@@ -43,6 +52,7 @@ export function OrderQueue({
   const [zone, setZone] = useState("all");
   const [now, setNow] = useState(Date.now());
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
+  const [uncertainOrderIds, setUncertainOrderIds] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState("");
   const headingId = useId();
 
@@ -56,27 +66,37 @@ export function OrderQueue({
     return () => clearInterval(timer);
   }, []);
 
-  // Select filter and scroll to focused order if specified
-  useEffect(() => {
-    if (!focusOrderId) return;
-    const targetOrder = orders.find(o => o.id === focusOrderId);
-    if (targetOrder) {
-      if (targetOrder.status === "new") setFilter("new");
-      else if (targetOrder.status === "preparing") setFilter("preparing");
-      else if (targetOrder.status === "ready") setFilter("ready");
-      else setFilter("history");
-    }
-    const element = document.getElementById("order-card-" + focusOrderId);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [focusOrderId, orders]);
-
   const tableZoneMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const t of tables) map.set(t.id, t.zone);
     return map;
   }, [tables]);
+
+  // Select filter and scroll to focused order if specified (consumed once per request)
+  const lastFocusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusOrderId || lastFocusedRef.current === focusOrderId) return;
+    const targetOrder = orders.find(o => o.id === focusOrderId);
+    if (targetOrder) {
+      lastFocusedRef.current = focusOrderId;
+      const targetZone = tableZoneMap.get(targetOrder.table_id);
+      if (zone !== "all" && targetZone && targetZone !== zone) {
+        setZone("all");
+      }
+      if (targetOrder.status === "new") setFilter("new");
+      else if (targetOrder.status === "preparing") setFilter("preparing");
+      else if (targetOrder.status === "ready") setFilter("ready");
+      else setFilter("history");
+
+      requestAnimationFrame(() => {
+        const element = document.getElementById("order-card-" + focusOrderId);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+      onFocusHandled?.();
+    }
+  }, [focusOrderId, orders, zone, tableZoneMap, onFocusHandled]);
 
   const zones = useMemo(() => [...new Set(tables.map(t => t.zone).filter(Boolean))], [tables]);
 
@@ -115,12 +135,28 @@ export function OrderQueue({
   async function handleAdvance(order: Order) {
     const nextStatus = statuses[order.status]?.next;
     if (!nextStatus || !canManageOrders) return;
-    if (isItemBusy(order.id) || busyOrderId === order.id) return;
+    if (isItemBusy(order.id) || busyOrderId === order.id || uncertainOrderIds.has(order.id)) return;
     setBusyOrderId(order.id);
     setActionError("");
     try {
-      const ok = await onOrderStatus(order, nextStatus);
-      if (!ok) setActionError("Chưa cập nhật được đơn #" + order.code + ". Vui lòng thử lại.");
+      const outcome = await onOrderStatus(order, nextStatus);
+      if (typeof outcome === "object" && outcome !== null) {
+        if (outcome.state === "uncertain") {
+          setUncertainOrderIds(prev => new Set(prev).add(order.id));
+          setActionError("Chưa nhận được xác nhận từ máy chủ cho đơn #" + order.code + ". Hệ thống đang tự động đối chiếu.");
+        } else if (outcome.state === "rejected") {
+          setActionError(outcome.message || "Chưa cập nhật được đơn #" + order.code + ".");
+        } else {
+          setUncertainOrderIds(prev => {
+            if (!prev.has(order.id)) return prev;
+            const next = new Set(prev);
+            next.delete(order.id);
+            return next;
+          });
+        }
+      } else if (!outcome) {
+        setActionError("Chưa cập nhật được đơn #" + order.code + ".");
+      }
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Thao tác thất bại.");
     } finally {
@@ -149,10 +185,10 @@ export function OrderQueue({
         <div className="oq-filter-bar" role="group" aria-label="Lọc đơn món">
           {([
             { id: "new", label: "Cần nhận", count: counts.new, attention: counts.new > 0 },
-            { id: "preparing", label: "Đang làm", count: counts.preparing },
-            { id: "ready", label: "Chờ phục vụ", count: counts.ready },
-            { id: "all", label: "Tất cả", count: counts.all },
-            { id: "history", label: "Lịch sử", count: counts.history },
+            { id: "preparing", label: "Đang làm", count: counts.preparing, attention: false },
+            { id: "ready", label: "Chờ phục vụ", count: counts.ready, attention: false },
+            { id: "all", label: "Tất cả", count: counts.all, attention: false },
+            { id: "history", label: "Lịch sử", count: counts.history, attention: false },
           ] as const).map(option => (
             <button
               type="button"
@@ -182,7 +218,8 @@ export function OrderQueue({
             const waitMinutes = Math.max(0, Math.floor((now - order.created_at) / 60_000));
             const isUrgent = waitMinutes >= 15 && order.status !== "served" && order.status !== "cancelled";
             const isWarning = waitMinutes >= 10 && !isUrgent && order.status !== "served" && order.status !== "cancelled";
-            const isOrderWorking = isItemBusy(order.id);
+            const isUncertain = uncertainOrderIds.has(order.id);
+            const isOrderWorking = isItemBusy(order.id) || isUncertain;
             const isFocused = focusOrderId === order.id;
 
             return (
@@ -200,7 +237,12 @@ export function OrderQueue({
                   </div>
 
                   <div className="oq-head-right">
-                    {order.status !== "served" && order.status !== "cancelled" ? (
+                    {isUncertain ? (
+                      <span className="oq-wait-badge warning" title="Chưa nhận được xác nhận từ máy chủ. Đang tự động đối chiếu.">
+                        <AlertCircle size={13} />
+                        Đang đối chiếu…
+                      </span>
+                    ) : order.status !== "served" && order.status !== "cancelled" ? (
                       <span className={"oq-wait-badge" + (isUrgent ? " urgent" : isWarning ? " warning" : "")}>
                         {isUrgent ? <Flame size={13} /> : <Clock3 size={13} />}
                         Chờ {waitMinutes}p
@@ -260,7 +302,9 @@ export function OrderQueue({
                         disabled={isOrderWorking}
                         onClick={() => void handleAdvance(order)}
                       >
-                        {isOrderWorking ? (
+                        {isUncertain ? (
+                          <><AlertCircle size={15} />Đang đối chiếu…</>
+                        ) : isOrderWorking ? (
                           <><LoaderCircle size={15} className="spin" />Đang lưu…</>
                         ) : order.status === "new" ? (
                           <><Check size={16} />Nhận & làm</>
@@ -272,7 +316,7 @@ export function OrderQueue({
                       </button>
                     )}
 
-                    {canCancelOrders && order.status === "new" && !order.paid && (
+                    {canCancelOrders && (order.status === "new" || order.status === "preparing") && !order.paid && (
                       <button
                         type="button"
                         className="oq-btn-cancel"

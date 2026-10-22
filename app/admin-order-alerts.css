@@ -13,7 +13,7 @@
 @media screen {
  .admin-order-popup{width:min(420px,calc(100vw - 28px));inset:80px 18px auto auto;max-height:calc(100dvh - 96px);overflow:auto;padding:20px 48px 22px 20px}
  .admin-order-popup-content>button{min-height:44px;white-space:normal;line-height:1.5}
- .admin-order-popup-close{width:38px;height:38px;right:10px;top:10px}
+ .admin-order-popup-close{width:44px;height:44px;min-width:44px;min-height:44px;right:6px;top:6px}
  .admin-order-popup-waiting{position:static;display:block;align-self:flex-end;line-height:1.5}
  .admin-audio-strip>span{min-width:0;flex-basis:300px;align-items:flex-start}
  .admin-audio-strip>button{min-height:44px;white-space:normal;line-height:1.5}

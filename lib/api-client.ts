@@ -25,17 +25,36 @@ export async function api<T = {ok: boolean}>(path: string, options: RequestInit 
     const response = await fetch(url, {...options, credentials: "same-origin", signal: controller.signal, headers});
     if(response.status===304&&previous)return structuredClone(previous.data) as T;
     if(!response.ok){snapshots.clear();snapshotEpoch++;}
-    let data: T & {error?: string};
-    try {data = await response.json();}
-    catch {throw new ApiError("Chưa đọc được phản hồi của quán. Vui lòng kiểm tra lại kết quả.", response.status, true);}
     let retryAfterMs: number | null = null;
     const retryHeader = response.headers.get("Retry-After");
     if (retryHeader) {
       const sec = parseInt(retryHeader, 10);
-      if (!Number.isNaN(sec) && sec > 0) retryAfterMs = sec * 1000;
+      if (!Number.isNaN(sec) && sec > 0) {
+        retryAfterMs = sec * 1000;
+      } else {
+        const parsedDate = Date.parse(retryHeader);
+        if (!Number.isNaN(parsedDate)) {
+          const diff = parsedDate - Date.now();
+          if (diff > 0) retryAfterMs = diff;
+        }
+      }
+    }
+    let data: (T & {error?: string}) | null = null;
+    try {
+      data = await response.json();
+    } catch {
+      if (!response.ok) {
+        throw new ApiError(
+          response.status === 429 ? "Hệ thống đang bận. Vui lòng thử lại sau." : "Chưa đọc được phản hồi của quán. Vui lòng kiểm tra lại kết quả.",
+          response.status,
+          response.status >= 500 || response.status === 408,
+          retryAfterMs
+        );
+      }
+      throw new ApiError("Chưa đọc được phản hồi của quán. Vui lòng kiểm tra lại kết quả.", response.status, true, retryAfterMs);
     }
     if (!response.ok) throw new ApiError(data?.error || "Chưa thực hiện được. Vui lòng thử lại.", response.status, response.status >= 500 || response.status === 408, retryAfterMs);
-    if (!data || typeof data !== "object") throw new ApiError("Phản hồi của quán chưa đầy đủ. Vui lòng kiểm tra lại kết quả.", response.status, true);
+    if (!data || typeof data !== "object") throw new ApiError("Phản hồi của quán chưa đầy đủ. Vui lòng kiểm tra lại kết quả.", response.status, true, retryAfterMs);
     const etag=response.headers.get("ETag");
     if(conditional&&etag&&epoch===snapshotEpoch){if(snapshots.size>=8)snapshots.delete(snapshots.keys().next().value!);snapshots.set(url,{etag,data:structuredClone(data)});}
     return data;

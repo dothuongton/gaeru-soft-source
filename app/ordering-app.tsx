@@ -159,19 +159,19 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
   const dismiss=()=>{const notice=addedNoticeRef.current;if(notice&&(notice.matches(":hover")||notice.contains(document.activeElement))){timer=setTimeout(dismiss,1000);return;}setAddedNotice(null);};
   timer=setTimeout(dismiss,5000);return()=>clearTimeout(timer);
  },[addedNotice]);
- const loadOrders=useCallback(async()=>{
+ const loadOrders=useCallback(async(throwOnError=false)=>{
   const current=connectionRef.current;if(!table||current.state!=="active"||!current.session||current.session.table_id!==table.id)return;
   const id=current.session.id,tableId=table.id,epoch=++ordersEpoch.current;
   const stillCurrent=()=>epoch===ordersEpoch.current&&connectionRef.current.state==="active"&&connectionRef.current.session?.id===id&&connectionRef.current.session?.table_id===tableId;
   try{const d=await api<{orders:Order[]}>("orders?table="+encodeURIComponent(table.token)+"&session="+encodeURIComponent(id));if(stillCurrent()){setOrders(d.orders);setSyncError("");}}
-  catch(e){if(stillCurrent()){setSyncError((e as Error).message);void loadMenu().catch(()=>{});}}
+  catch(e){if(stillCurrent()){setSyncError((e as Error).message);void loadMenu().catch(()=>{});}if(throwOnError)throw e;}
  },[table?.token,table?.id,connection.state,connection.session?.id,loadMenu]);
  const canOrder=ready&&connection.state==="active"&&!!connection.session;
  const ordersPollerRef=useRef<AdaptiveScheduler|null>(null);
  const menuPollerRef=useRef<AdaptiveScheduler|null>(null);
  useEffect(()=>{
   if(!ready||view==="admin")return;
-  ordersPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadOrders();},baseIntervalMs:10000,maxIntervalMs:30000,pauseWhenHidden:true});
+  ordersPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadOrders(true);},baseIntervalMs:10000,maxIntervalMs:30000,pauseWhenHidden:true});
   ordersPollerRef.current.start();
   return()=>{ordersPollerRef.current?.stop();ordersPollerRef.current=null;};
  },[ready,view,loadOrders]);
@@ -179,7 +179,7 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
   if(!ready||view==="admin")return;
   const baseInterval=canOrder?10000:30000;
   if(!menuPollerRef.current){
-   menuPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadMenu().catch(()=>{});},baseIntervalMs:baseInterval,maxIntervalMs:30000,pauseWhenHidden:true});
+   menuPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadMenu();},baseIntervalMs:baseInterval,maxIntervalMs:30000,pauseWhenHidden:true});
    menuPollerRef.current.start();
   }else{
    menuPollerRef.current.setBaseInterval(baseInterval);

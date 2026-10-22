@@ -328,6 +328,7 @@ async function handleScoped(request:Request){
  }catch(e){if(e instanceof OrderError)return json({error:e.message},e.status);console.error("QR ordering API error",e instanceof Error?e.message:"Unknown error");return json({error:"Chưa kết nối được với quán. Vui lòng thử lại."},500);}
 }
 async function handle(request:Request){
+ const t0 = performance.now();
  try{
   verifyCsrf(request);
   await ensurePlatformSchema();
@@ -393,9 +394,9 @@ async function handle(request:Request){
    }
   }
 
-  const t0 = performance.now();
+  let tStore = t0;
   const store = await resolveStore(request);
-  const tStore = performance.now();
+  tStore = performance.now();
   const resp = await inStore(store.id,async()=>{
    if(store.status!=="active"&&!(await getStaffAccess(request)).isOwner){
     throw new OrderError("Cửa hàng đang tạm khóa. Vui lòng liên hệ GAERU Soffware hoặc truy cập /gaeru để chọn cửa hàng khác.",403);
@@ -406,7 +407,17 @@ async function handle(request:Request){
   resp.headers.set("Server-Timing", `store;dur=${(tStore - t0).toFixed(1)}, total;dur=${(tTotal - t0).toFixed(1)}`);
   return resp;
  }
- catch(error){if(error instanceof OrderError)return json({error:error.message},error.status);console.error("API error",error instanceof Error?error.message:"Unknown",error instanceof Error?error.stack:"");return json({error:error instanceof Error?error.message:"Chưa kết nối được với hệ thống. Vui lòng thử lại."},500);}
+ catch(error){
+  const tTotal = performance.now();
+  let resp: Response;
+  if(error instanceof OrderError) resp = json({error:error.message},error.status);
+  else {
+   console.error("API error",error instanceof Error?error.message:"Unknown",error instanceof Error?error.stack:"");
+   resp = json({error:error instanceof Error?error.message:"Chưa kết nối được với hệ thống. Vui lòng thử lại."},500);
+  }
+  resp.headers.set("Server-Timing", `total;dur=${(tTotal - t0).toFixed(1)}`);
+  return resp;
+ }
 }
 export const GET=handle;
 export const POST=handle;

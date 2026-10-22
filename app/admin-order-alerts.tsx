@@ -508,11 +508,12 @@ export function NewOrderPopup({
     <span className="admin-order-popup-icon">{opening ? <DoorOpen size={25}/> : <BellRing size={25}/>}</span>
     <div className="admin-order-popup-content">
       <span className="admin-order-popup-label">{support ? "BÀN CẦN HỖ TRỢ" : opening ? "YÊU CẦU MỞ BÀN MỚI" : "CÓ ĐƠN GỌI MÓN MỚI"}</span>
-      <strong>{adminAlertSpeech(alert)}</strong>
+      <strong>{alert.tableName} · {opening ? "Mở bàn mới" : support ? "Cần hỗ trợ" : `${alert.orderCount} đơn mới`}</strong>
+      <span className="sr-only">{adminAlertSpeech(alert)}</span>
       <p>{support ? "Đang chờ nhân viên hỗ trợ" : opening ? (alert.customerName ? "Khách: " + alert.customerName + " · " : "") + "Đang chờ quản trị xác nhận" : <>{alert.orderCount} đơn mới{canSeeMoney ? " · " + money(alert.total) : ""}{alert.customerName ? " · " + alert.customerName : ""}</>}</p>
-      <button type="button" onClick={handleAction}>{(opening || support) ? "Xem yêu cầu" : onOpenOrder ? "Xem đơn" : "Xử lý đơn"}<ArrowUpRight size={14}/></button>
+      <button type="button" style={{ minHeight: 44, minWidth: 44 }} onClick={handleAction}>{(opening || support) ? "Xem yêu cầu" : onOpenOrder ? "Xem đơn" : "Xử lý đơn"}<ArrowUpRight size={14}/></button>
     </div>
-    <button type="button" className="admin-order-popup-close" aria-label={opening ? "Ẩn thông báo, giữ yêu cầu mở bàn chờ xử lý" : "Ẩn thông báo, giữ đơn mới trên bàn"} onClick={onDismiss}><X size={18}/></button>
+    <button type="button" className="admin-order-popup-close" style={{ minWidth: 44, minHeight: 44 }} aria-label={opening ? "Ẩn thông báo, giữ yêu cầu mở bàn chờ xử lý" : "Ẩn thông báo, giữ đơn mới trên bàn"} onClick={onDismiss}><X size={18}/></button>
     {waiting > 0 && <span className="admin-order-popup-waiting">Còn {waiting} thông báo</span>}
     <span className="admin-order-popup-timer" key={alert.id} style={{animationDuration: `${durationMs}ms`}} aria-hidden="true"/>
   </div>;
