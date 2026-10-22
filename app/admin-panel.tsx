@@ -919,9 +919,23 @@ export default function AdminPanel({
         <Suspense fallback={null}>
           <TablePaymentDialog
             sessionId={tablePaymentSessionId}
+            canClose={canTables && (() => {
+              const sessionOrders = data?.orders.filter(o => o.dining_session_id === tablePaymentSessionId && o.status !== "cancelled") ?? [];
+              return sessionOrders.length > 0 && sessionOrders.every(o => o.status === "served");
+            })()}
+            unservedCount={(() => {
+              const sessionOrders = data?.orders.filter(o => o.dining_session_id === tablePaymentSessionId && o.status !== "cancelled") ?? [];
+              return sessionOrders.filter(o => o.status !== "served").length;
+            })()}
+            onCloseSession={canTables ? async () => {
+              const session = data?.sessions.find(s => s.id === tablePaymentSessionId);
+              if (session) {
+                setTablePaymentSessionId(null);
+                await sessionAction(session, "close");
+              }
+            } : undefined}
             onClose={() => setTablePaymentSessionId(null)}
             onPaid={result => {
-              setTablePaymentSessionId(null);
               setRevenueRevision(n => n + 1);
               void reload(true);
               void onMenuRefresh().catch(() => {});

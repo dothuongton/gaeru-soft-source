@@ -217,3 +217,10 @@ test("initial staff HTML has a neutral stable shell and no protected data",()=>{
  assert.equal((html.match(/disabled/g)||[]).length,4);
  assert.doesNotMatch(html,/Bàn 01|0 ₫|customer_name/);
 });
+
+test("table payment dialog renders clean settlement tray and preselected cash", () => {
+  const { TablePaymentDialog } = load("app/table-payment-dialog.tsx");
+  const html = render(TablePaymentDialog, { sessionId: "session-1", onClose: () => {}, onPaid: () => {} });
+  assert.match(html, /THANH TOÁN CẢ BÀN/);
+  assert.match(html, /Đang kiểm tra các lần gọi món/);
+});
