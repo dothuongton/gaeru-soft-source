@@ -143,7 +143,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
       if (played && alert && mounted.current && epoch === speechEpoch.current) chimed.current.add(alert.id);
     });
     const finishFallback = () => {
-      void (withChime ? chimeResult : chime()).then(delivered => {
+      void chime().then(delivered => {
         if (!mounted.current || epoch !== speechEpoch.current) return;
         finishAttempt(false);
         // A chime is not a completed Vietnamese announcement. Keep it for retry.
@@ -152,17 +152,17 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     };
     if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
       finishFallback();
-      setVoiceNotice("Trình duyệt chưa hỗ trợ đọc tên bàn; tiếng chuông được dùng khi trình duyệt cho phép.");
+      setVoiceNotice("Trình duyệt chưa hỗ trợ đọc tên bàn; hệ thống phát chuông thông báo.");
       return;
     }
     const synth = window.speechSynthesis;
-    const voices = synth.getVoices();
+    let voices = synth.getVoices();
     vietnameseVoice.current = selectVietnameseVoice(voices, selectedVoiceRef.current);
-    if (!vietnameseVoice.current) {
+    if (!vietnameseVoice.current && voices.length > 0) {
       speechReady.current = false;
       speechNeedsGesture.current = false;
       finishFallback();
-      setVoiceNotice("Thiết bị chưa cung cấp giọng tiếng Việt. Hệ thống chỉ phát chuông, không đọc bằng ngôn ngữ khác. Bật hoặc tải giọng Việt trong phần Trợ năng rồi mở lại trang.");
+      setVoiceNotice("Thiết bị chưa có giọng tiếng Việt; hệ thống phát chuông thông báo cho bàn và đơn mới.");
       reportReadiness();
       return;
     }
@@ -188,7 +188,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
         audioBlocked.current = false;
         speechReady.current = true;
         speechNeedsGesture.current = false;
-        setVoiceNotice("Đang đọc tiếng Việt bằng giọng " + (line.voice?.name ?? "tự động") + ". Nếu vẫn im lặng, tắt chế độ Im lặng trên iPhone rồi tăng âm lượng ngay khi đang thử đọc.");
+        setVoiceNotice("Đang đọc tiếng Việt bằng giọng " + (line.voice?.name ?? "tự động") + ".");
         reportReadiness();
       };
       line.onend = () => {
@@ -196,7 +196,10 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
         if (speechTimer.current) clearTimeout(speechTimer.current);
         speechTimer.current = null;
         utterance.current = null;
-        if (!alert) setVoiceNotice("Bộ đọc đã kết thúc câu thử. Nếu anh không nghe tiếng, hãy tắt chế độ Im lặng, kiểm tra đầu ra âm thanh và gửi lại trạng thái này.");
+        if (typeof window !== "undefined") {
+          (window as unknown as { __activeUtterance?: SpeechSynthesisUtterance | null }).__activeUtterance = null;
+        }
+        if (!alert) setVoiceNotice("Đã đọc xong câu thông báo thử nghiệm.");
         finishAttempt(true);
         audioBlocked.current = false;
         continueAudio();
@@ -206,6 +209,9 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
         if (speechTimer.current) clearTimeout(speechTimer.current);
         speechTimer.current = null;
         utterance.current = null;
+        if (typeof window !== "undefined") {
+          (window as unknown as { __activeUtterance?: SpeechSynthesisUtterance | null }).__activeUtterance = null;
+        }
         const started = !!alert && announcements.current.hasStarted(alert.id);
         finishAttempt(started);
         audioBlocked.current = !started;
@@ -216,23 +222,40 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
         }
         speechReady.current = false;
         speechNeedsGesture.current = event.error === "not-allowed";
-        setVoiceNotice("Không phát được giọng đọc (" + event.error + "). " + ((event.error === "voice-unavailable" || event.error === "language-unavailable") ? "Hãy tải giọng tiếng Việt trong phần Trợ năng của thiết bị, rồi mở lại Safari." : "Chọn giọng Việt khác rồi chạm Thử giọng đọc. Tiếng chuông vẫn hoạt động độc lập."));
+        setVoiceNotice("Không phát được giọng đọc (" + event.error + "). Hệ thống dùng chuông báo.");
+        void chime();
         reportReadiness();
       };
       const startSpeech = () => {
-      if (!mounted.current || epoch !== speechEpoch.current || !visibleRef.current) return;
-      mediaChime.current?.stop();
-      try {const session=(navigator as PlaybackNavigator).audioSession;if(session)session.type="auto";} catch {}
-      speechTimer.current = setTimeout(() => {
-        if (!mounted.current || epoch !== speechEpoch.current) return;
-        stopSpeech();
-        audioBlocked.current = true;
-        speechReady.current = false;
-        speechNeedsGesture.current = true;
-        setVoiceNotice("Trình duyệt chưa khởi động giọng đọc sau 8 giây. " + (vietnameseVoice.current ? "Hãy chọn giọng Việt khác rồi thử lại." : "Safari chưa cung cấp giọng Việt. Kiểm tra giọng tiếng Việt trong phần Trợ năng của thiết bị rồi mở lại Safari."));
-        reportReadiness();
-      }, 8_000);
-      try {if (synth.paused) synth.resume();synth.speak(line);} catch {if(speechTimer.current)clearTimeout(speechTimer.current);speechTimer.current=null;finishAttempt(false);utterance.current=null;audioBlocked.current=true;speechReady.current=false;speechNeedsGesture.current=true;setVoiceNotice("Chưa đọc được thông báo. Chạm nút phát thông báo để kích hoạt lại.");reportReadiness();}
+        if (!mounted.current || epoch !== speechEpoch.current || !visibleRef.current) return;
+        mediaChime.current?.stop();
+        speechTimer.current = setTimeout(() => {
+          if (!mounted.current || epoch !== speechEpoch.current) return;
+          stopSpeech();
+          audioBlocked.current = true;
+          speechReady.current = false;
+          speechNeedsGesture.current = true;
+          setVoiceNotice("Trình duyệt chưa khởi động giọng đọc sau 8 giây.");
+          reportReadiness();
+        }, 8_000);
+        try {
+          if (synth.paused) synth.resume();
+          if (typeof window !== "undefined") {
+            (window as unknown as { __activeUtterance?: SpeechSynthesisUtterance | null }).__activeUtterance = line;
+          }
+          synth.speak(line);
+        } catch {
+          if(speechTimer.current)clearTimeout(speechTimer.current);
+          speechTimer.current=null;
+          finishAttempt(false);
+          utterance.current=null;
+          audioBlocked.current=true;
+          speechReady.current=false;
+          speechNeedsGesture.current=true;
+          setVoiceNotice("Chưa đọc được thông báo. Chạm nút phát thông báo để kích hoạt lại.");
+          void chime();
+          reportReadiness();
+        }
       };
       // The direct activation stays synchronous; later notifications wait for the chime.
       if(!withChime)startSpeech();
@@ -243,6 +266,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
       speechReady.current = false;
       speechNeedsGesture.current = true;
       setVoiceNotice("Chưa phát được giọng đọc. Bấm Thử giọng đọc để kiểm tra.");
+      void chime();
       reportReadiness();
     }
   }, [chime, continueAudio, reportReadiness, stopSpeech]);
@@ -265,9 +289,9 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     audioBlocked.current = false;
     const current = audioQueue.current.first();
     if (current && announcements.current.canBegin(current)) {
-      speak(adminAlertSpeech(current), current, false);
+      speak(adminAlertSpeech(current), current, true);
     } else {
-      speak("Đây là giọng đọc thông báo. Bàn số một cần hỗ trợ.", undefined, false);
+      speak("Đây là giọng đọc thông báo. Bàn số một cần hỗ trợ.", undefined, true);
     }
   }, [prepareAudio, speak, stopSpeech]);
 

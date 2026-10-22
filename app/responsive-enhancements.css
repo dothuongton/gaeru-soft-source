@@ -337,7 +337,7 @@
   .app-shell .cart-count { min-width: 32px; min-height: 32px; font-size: var(--moc-ui-small); }
   .app-shell .toast { bottom: calc(var(--moc-mobile-nav-height) + 18px + env(safe-area-inset-bottom)); padding: 10px 12px; max-height: 50dvh; }
   .app-shell[data-view="menu"] .toast { bottom: calc(var(--moc-mobile-nav-height) + 110px + env(safe-area-inset-bottom)); }
-  .app-shell[data-view="admin"] .toast { bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .app-shell[data-view="admin"] .toast { top: calc(16px + env(safe-area-inset-top)); bottom: auto; }
 
   .app-shell .page-heading { flex-wrap: wrap; }
   .app-shell .page-heading h1 { font-size: max(28px, calc(38px * var(--moc-font-scale, 1))); }

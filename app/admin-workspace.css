@@ -18,7 +18,11 @@
 .app-shell[data-view="admin"] .aw-header-actions{display:flex;gap:2px;flex-shrink:0}
 .app-shell[data-view="admin"] .aw-icon{display:inline-flex;align-items:center;justify-content:center;position:relative;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:1px solid var(--aw-line);border-radius:10px;background:#fff;color:var(--aw-accent);flex-shrink:0}
 .app-shell[data-view="admin"] .aw-header-actions .aw-icon{border-color:transparent;width:40px;min-width:40px}
-.app-shell[data-view="admin"] .aw-icon[aria-pressed="true"]{background:var(--aw-soft)}
+.app-shell[data-view="admin"] .aw-icon[aria-pressed="true"],.app-shell[data-view="admin"] .aw-icon.sound-ready{background:var(--aw-soft);color:var(--aw-accent)}
+.app-shell[data-view="admin"] .aw-icon.needs-gesture{color:#c2410c;background:#fff7ed;border-color:#fed7aa}
+.app-shell[data-view="admin"] .aw-sound-banner{margin:0 0 16px}
+.app-shell[data-view="admin"] .aw-sound-banner>button{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:12px;background:#fffbeb;border:1.5px solid #f59e0b;color:#92400e;font-weight:600;font-size:14px;cursor:pointer;transition:background .15s}
+.app-shell[data-view="admin"] .aw-sound-banner>button:hover{background:#fef3c7}
 .app-shell[data-view="admin"] .aw-dot{position:absolute;right:7px;top:7px;width:6px;height:6px;background:#a57331;border-radius:50%}
 .app-shell[data-view="admin"] .aw-nav{grid-area:nav;display:flex;align-items:stretch;justify-content:space-around;padding:6px 8px max(8px,env(safe-area-inset-bottom));border-top:1px solid var(--aw-line);background:#fff;z-index:30;min-height:0;overflow:hidden}
 .app-shell[data-view="admin"] .aw-nav>button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border-radius:10px;padding:5px 3px;color:var(--aw-muted);font-size:11px;line-height:1.2}
