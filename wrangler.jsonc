@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gaeru-soft",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gaeru-soft-db",
+      "migrations_dir": "drizzle"
+      // Note: If you have an existing Cloudflare D1 database with an explicit ID,
+      // you can set "database_id": "<your-d1-database-uuid>" here or pass
+      // CLOUDFLARE_DATABASE_ID in your Cloudflare build environment variables.
+      // If omitted, Cloudflare auto-provisions or matches by database_name.
+    }
+  ]
+}

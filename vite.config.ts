@@ -1,3 +1,4 @@
+import type { WorkerConfig } from "@cloudflare/vite-plugin";
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -13,28 +14,6 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
-
-const localBindingConfig = {
-  main: "./build/sites-worker.ts",
-  compatibility_flags: ["nodejs_compat"],
-  d1_databases: d1
-    ? [
-        {
-          binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
-        },
-      ]
-    : [],
-  r2_buckets: r2
-    ? [
-        {
-          binding: r2,
-          bucket_name: "site-creator-r2",
-        },
-      ]
-    : [],
-};
 
 export default defineConfig(async ({ command }) => {
   // Use Miniflare's local Request.cf placeholder unless fetching is requested.
@@ -67,19 +46,67 @@ export default defineConfig(async ({ command }) => {
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
-        config: {
-          ...localBindingConfig,
-          ...(command === "serve"
-            ? {
-                services: [
-                  {
-                    binding: "CONNECTORS",
-                    service: "sites-connector-preview",
-                    entrypoint: "ConnectorPreview",
-                  },
-                ],
+        config: (workerConfig: WorkerConfig) => {
+          workerConfig.main = "./build/sites-worker.ts";
+          workerConfig.compatibility_flags = workerConfig.compatibility_flags || [];
+          if (!workerConfig.compatibility_flags.includes("nodejs_compat")) {
+            workerConfig.compatibility_flags.push("nodejs_compat");
+          }
+
+          const configuredDbId =
+            process.env.CLOUDFLARE_DATABASE_ID ||
+            process.env.D1_DATABASE_ID ||
+            process.env.DATABASE_ID;
+          const configuredDbName =
+            process.env.CLOUDFLARE_DATABASE_NAME ||
+            process.env.D1_DATABASE_NAME ||
+            process.env.DATABASE_NAME;
+
+          if (d1) {
+            workerConfig.d1_databases = workerConfig.d1_databases || [];
+            let entry = workerConfig.d1_databases.find((d) => d.binding === d1);
+            if (!entry) {
+              entry = { binding: d1, database_name: configuredDbName || "gaeru-soft-db" };
+              workerConfig.d1_databases.push(entry);
+            } else if (configuredDbName) {
+              entry.database_name = configuredDbName;
+            }
+
+            entry.migrations_dir = "drizzle";
+
+            if (configuredDbId) {
+              entry.database_id = configuredDbId;
+            } else if (command === "serve") {
+              entry.database_id = entry.database_id || SITE_CREATOR_PLACEHOLDER_DATABASE_ID;
+            } else {
+              if (entry.database_id === SITE_CREATOR_PLACEHOLDER_DATABASE_ID) {
+                delete entry.database_id;
               }
-            : {}),
+            }
+          }
+
+          if (r2) {
+            workerConfig.r2_buckets = workerConfig.r2_buckets || [];
+            if (!workerConfig.r2_buckets.some((b) => b.binding === r2)) {
+              workerConfig.r2_buckets.push({
+                binding: r2,
+                bucket_name: "site-creator-r2",
+              });
+            }
+          }
+
+          if (command === "serve") {
+            workerConfig.services = workerConfig.services || [];
+            if (!workerConfig.services.some((s) => s.binding === "CONNECTORS")) {
+              workerConfig.services.push({
+                binding: "CONNECTORS",
+                service: "sites-connector-preview",
+                entrypoint: "ConnectorPreview",
+              });
+            }
+          }
+
+          return undefined;
         },
         ...(command === "serve"
           ? {

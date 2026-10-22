@@ -26,4 +26,15 @@ Không đổi bản ghi gốc gaeru.com hoặc www. Kiểm tra bản ghi soft hi
 
 README.md có mô tả chức năng và môi trường phát triển hiện tại. Các lệnh trong scripts có phụ thuộc môi trường Sites; không phải bộ cài Hostinger tự động.
 
-Kiểm tra gần nhất: 276 kiểm thử tự động đạt; production build thành công. Chưa kiểm tra chạy độc lập ở Hostinger.
+## Hướng dẫn triển khai Cloudflare Workers & D1
+1. **Lệnh build và deploy trên Cloudflare Dashboard**:
+   - Build command: `pnpm run build`
+   - Deploy command: `npx wrangler deploy`
+2. **Cơ sở dữ liệu D1 (`DB`)**:
+   - Tệp `wrangler.jsonc` tại gốc repo khai báo binding `DB` với `database_name: gaeru-soft-db` và `migrations_dir: drizzle`.
+   - Nếu đã tạo sẵn D1 trên Cloudflare, điền UUID vào trường `database_id` trong `wrangler.jsonc` hoặc thêm biến môi trường build `CLOUDFLARE_DATABASE_ID=<uuid>`.
+   - Nếu chưa tạo, Wrangler sẽ tự động liên kết / khởi tạo theo tên `database_name`.
+3. **Áp dụng Migration vào D1**:
+   - Chạy lệnh `npm run db:migrate:remote` (tương đương `npx wrangler d1 migrations apply DB --remote`) để chạy các migration từ `drizzle/`.
+
+Kiểm tra gần nhất: 292 kiểm thử tự động đạt; production build thành công.
