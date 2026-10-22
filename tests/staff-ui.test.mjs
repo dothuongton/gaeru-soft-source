@@ -150,3 +150,27 @@ test("paid or cancelled orders do not gain collection or cancellation controls w
     assert.match(html, /aria-label="Xem chi tiết đơn M123"/);
   }
 });
+
+test("table overview shows the six approved states and counts only current-session requests",()=>{
+ const base=boardProps(ALL_PERMISSIONS);
+ const extra={id:"3",name:"Bàn 03",zone:"Sảnh chính",token:"free-table"};
+ const html=render(OpenTableBoard,{...base,initialView:"matrix",tables:[...base.tables,extra],calls:[...base.calls,{...base.calls[0],id:"bill",kind:"bill"},{...base.calls[0],id:"stale",session_id:"old-visit",kind:"bill"}]});
+ const labels=buttons(html);
+ for(const label of ["Tất cả: 3 bàn","Chờ duyệt: 1 bàn","Yêu cầu thanh toán: 1 bàn","Đang phục vụ: 1 bàn","Cần hỗ trợ: 1 bàn","Trống: 1 bàn"])assert.ok(html.includes(`aria-label="${label}"`),label);
+ assert.match(html,/aria-label="Dạng lưới"/);
+ assert.match(html,/aria-label="Dạng danh sách"/);
+ assert.match(html,/aria-label="Mã QR Bàn 03"/);
+ assert.equal(labels.includes("Thêm bàn"),false);
+});
+test("the staff shell keeps only four main navigation items and permission-gates operational tools",()=>{
+ const {AdminWorkspace}=load("app/admin-workspace.tsx");
+ const {defaultShop}=load("lib/menu.ts");
+ const unused=()=>{};
+ const props={shop:defaultShop,access:staffAccess("manager"),tab:"orders",onSwitch:unused,onAudio:unused,onListen:unused,soundReady:false,canOrders:true,canTables:true,pendingCount:0,supportCount:0};
+ const html=render(AdminWorkspace,props);
+ const nav=html.match(/<nav[\s\S]*?<\/nav>/)[0];
+ assert.deepEqual(buttons(nav),["Bàn","Đơn món","Hỗ trợ","Cài đặt"]);
+ const restricted=render(AdminWorkspace,{...props,canOrders:false,canTables:false});
+ assert.doesNotMatch(restricted,/Nghe thử giọng đọc/);
+ assert.deepEqual(buttons(restricted.match(/<nav[\s\S]*?<\/nav>/)[0]),["Cài đặt"]);
+});

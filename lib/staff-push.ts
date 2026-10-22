@@ -97,19 +97,31 @@ export async function subscribeStaffDevice(params: {
   const now = Date.now();
   const db = storeDatabase();
 
-  // Check if an existing row matches this endpoint hash or (userId, deviceId)
+  // Guard against endpoint hijacking: a different user cannot overwrite an existing device subscription
+  const existingByEndpoint = await db
+    .prepare("SELECT id, user_id FROM staff_push_subscriptions WHERE endpoint_hash = ?")
+    .bind(endpointHash)
+    .first<PushSubscriptionRow>();
+
+  if (existingByEndpoint && existingByEndpoint.user_id !== userId) {
+    throw new OrderError(
+      "Thiết bị này đã được liên kết với một tài khoản khác trong cửa hàng. Vui lòng đăng xuất hoặc hủy thông báo từ tài khoản cũ.",
+      409
+    );
+  }
+
+  // Check if an existing row matches this (userId, deviceId) or (userId, endpointHash)
   const existing = await db
-    .prepare("SELECT * FROM staff_push_subscriptions WHERE endpoint_hash = ? OR (user_id = ? AND device_id = ?)")
-    .bind(endpointHash, userId, deviceId)
+    .prepare("SELECT * FROM staff_push_subscriptions WHERE (user_id = ? AND device_id = ?) OR (user_id = ? AND endpoint_hash = ?)")
+    .bind(userId, deviceId, userId, endpointHash)
     .first<PushSubscriptionRow>();
 
   if (existing) {
     await db
       .prepare(
-        "UPDATE staff_push_subscriptions SET user_id = ?, staff_account_id = ?, device_id = ?, endpoint = ?, endpoint_hash = ?, p256dh = ?, auth = ?, updated_at = ?, last_seen_at = ? WHERE id = ?"
+        "UPDATE staff_push_subscriptions SET staff_account_id = ?, device_id = ?, endpoint = ?, endpoint_hash = ?, p256dh = ?, auth = ?, updated_at = ?, last_seen_at = ? WHERE id = ?"
       )
       .bind(
-        userId,
         staffAccountId ?? null,
         deviceId,
         endpoint,
@@ -359,8 +371,15 @@ export async function sendTestPush(params: {
   };
 
   let delivered = 0;
+  const staleIds: string[] = [];
+
   for (const sub of subs.results) {
     try {
+      if (!isValidPushEndpoint(sub.endpoint)) {
+        staleIds.push(sub.id);
+        continue;
+      }
+
       const payload = await buildPushPayload(
         messageData,
         {
@@ -388,9 +407,21 @@ export async function sendTestPush(params: {
 
       if (response.ok || response.status === 201) {
         delivered++;
+        await db
+          .prepare("UPDATE staff_push_subscriptions SET last_seen_at = ? WHERE id = ?")
+          .bind(Date.now(), sub.id)
+          .run();
+      } else if (response.status === 404 || response.status === 410) {
+        staleIds.push(sub.id);
       }
     } catch (err) {
       console.warn("Test push error:", err);
+    }
+  }
+
+  if (staleIds.length > 0) {
+    for (const id of staleIds) {
+      await db.prepare("DELETE FROM staff_push_subscriptions WHERE id = ?").bind(id).run();
     }
   }
 

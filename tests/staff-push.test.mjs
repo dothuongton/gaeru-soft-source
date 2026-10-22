@@ -17,7 +17,6 @@ function transpile(filePath) {
 
 // Load staff-push module with mocked cloudflare environment
 const environment = { DB: null, STAFF_EMAILS: "owner@gaeru.test", VAPID_PUBLIC_KEY: "test_pub", VAPID_PRIVATE_KEY: "test_priv", VAPID_SUBJECT: "mailto:admin@gaeru.test" };
-const mockCtx = new Map();
 
 function d1(db) {
   return {
@@ -109,7 +108,7 @@ const pushRequire = (specifier) => {
   }
   if (specifier === "@block65/webcrypto-web-push") {
     return {
-      buildPushPayload: async (msg, sub) => ({
+      buildPushPayload: async (msg) => ({
         headers: { authorization: "vapid t=mock", ttl: "60", "content-encoding": "aes128gcm" },
         method: "POST",
         body: new TextEncoder().encode(JSON.stringify(msg)),
@@ -344,4 +343,69 @@ test("PWA manifest, offline fallback, and Service Worker security rules", () => 
   assert.ok(swCode.includes("url.pathname.startsWith(\"/api/\")"), "Service Worker must exclude API from caching");
   assert.ok(swCode.includes("request.mode === \"navigate\""), "Service Worker must handle navigation offline fallback");
   assert.ok(swCode.includes("notificationclick"), "Service Worker must handle notification clicks");
+});
+
+test("A different user must not overwrite an existing device subscription", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  for (const file of readdirSync(root + "drizzle").filter((x) => x.endsWith(".sql")).sort()) {
+    sqlite.exec(readFileSync(root + "drizzle/" + file, "utf8"));
+  }
+  environment.DB = d1(sqlite);
+  const endpoint = "https://fcm.googleapis.com/fcm/send/private-owner-device";
+  await getStoreDb().inStore("main", async () => {
+    await subscribeStaffDevice({
+      userId: "original-user",
+      deviceId: "original-device",
+      endpoint,
+      p256dh: "A".repeat(87),
+      auth: "B".repeat(22),
+    });
+    try {
+      await subscribeStaffDevice({
+        userId: "second-user",
+        deviceId: "different-device",
+        endpoint,
+        p256dh: "C".repeat(87),
+        auth: "D".repeat(22),
+      });
+    } catch {
+      // expected error
+    }
+  });
+  const saved = sqlite.prepare("SELECT user_id, p256dh FROM staff_push_subscriptions WHERE endpoint = ?").get(endpoint);
+  assert.equal(saved.user_id, "original-user", "A new user must not silently take over an existing endpoint association");
+});
+
+test("sendTestPush validates endpoint and cleans up 404/410 subscriptions", async () => {
+  const sqlite = new DatabaseSync(":memory:");
+  for (const file of readdirSync(root + "drizzle").filter((x) => x.endsWith(".sql")).sort()) {
+    sqlite.exec(readFileSync(root + "drizzle/" + file, "utf8"));
+  }
+  environment.DB = d1(sqlite);
+  const deadEndpoint = "https://fcm.googleapis.com/fcm/send/dead-device";
+  await getStoreDb().inStore("main", async () => {
+    await subscribeStaffDevice({
+      userId: "test-user",
+      deviceId: "dev-dead",
+      endpoint: deadEndpoint,
+      p256dh: "A".repeat(87),
+      auth: "B".repeat(22),
+    });
+  });
+
+  const config = getVapidConfig();
+  assert.equal(config.enabled, true);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("Not Found", { status: 404 });
+  try {
+    const res = await getStoreDb().inStore("main", async () =>
+      sendTestPush({ userId: "test-user", deviceId: "dev-dead", storeId: "main" })
+    );
+    assert.equal(res.success, false);
+    const remaining = sqlite.prepare("SELECT COUNT(*) as c FROM staff_push_subscriptions WHERE endpoint = ?").get(deadEndpoint);
+    assert.equal(remaining.c, 0, "Dead subscription must be evicted on 404/410");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

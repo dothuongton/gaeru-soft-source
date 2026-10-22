@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals */
 // GAERU Soft Service Worker — PWA, offline fallback & Staff Web Push
 
-const CACHE_NAME = "gaeru-static-v1";
+const CACHE_NAME = "gaeru-static-v2";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
@@ -25,13 +25,16 @@ self.addEventListener("install", (event) => {
 // Activate: clean up older gaeru caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key.startsWith("gaeru-") && key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith("gaeru-") && key !== CACHE_NAME)
+            .map((key) => caches.delete(key))
+        )
       )
-    ).then(() => self.clients.claim())
+      .then(() => self.clients.claim())
   );
 });
 
@@ -58,20 +61,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Strictly NETWORK-ONLY for APIs, auth, Flight/RSC, QR parameters, and dynamic admin queries
-  if (
-    url.pathname.startsWith("/api/") ||
-    url.pathname.startsWith("/auth/") ||
-    url.searchParams.has("table") ||
-    url.searchParams.has("session") ||
-    request.headers.get("RSC") === "1" ||
-    request.headers.get("Next-Router-State-Tree") ||
-    request.headers.get("Next-Url")
-  ) {
-    return;
-  }
-
-  // Navigation requests (HTML documents)
+  // 1. Navigation requests (HTML documents) — ALL HTML navigations get offline fallback
+  // Includes root, store paths, and table QR URLs (?table=... / ?session=...).
+  // Network-first: always fetch fresh from server; if offline, return neutral offline.html.
+  // CRITICAL: Never cache dynamic table/session HTML to prevent leaking customer order states.
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => {
@@ -81,7 +74,7 @@ self.addEventListener("fetch", (event) => {
           cachedOffline ||
           new Response("Mất kết nối mạng. Vui lòng thử lại sau.", {
             status: 503,
-            headers: { "Content-Type": "text/plain; charset=utf-8" },
+            headers: { "Content-Type": "text/html; charset=utf-8" },
           })
         );
       })
@@ -89,28 +82,58 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static immutable assets: Vite dist assets, public images, icons
-  const isStaticAsset =
-    url.pathname.startsWith("/assets/") ||
-    url.pathname.startsWith("/images/") ||
-    PRECACHE_ASSETS.includes(url.pathname);
+  // 2. Strictly NETWORK-ONLY for APIs, Flight/RSC, dynamic query states
+  // Do NOT return offline.html for data/APIs.
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/auth/") ||
+    request.headers.get("RSC") === "1" ||
+    request.headers.get("Next-Router-State-Tree") ||
+    request.headers.get("Next-Url")
+  ) {
+    return;
+  }
 
-  if (isStaticAsset) {
+  // 3. Static immutable assets: Vite/Next hashed bundles and identity icons
+  const isPrecached = PRECACHE_ASSETS.includes(url.pathname);
+  const isHashedAsset =
+    url.pathname.startsWith("/_next/static/") ||
+    (url.pathname.startsWith("/assets/") && /[-.][a-f0-9]{8,}\./i.test(url.pathname));
+
+  if (isPrecached || isHashedAsset) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) {
           return cached;
         }
-        return fetch(request)
-          .then((response) => {
-            if (response && response.status === 200 && response.type === "basic") {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-          .catch(() => caches.match(OFFLINE_URL));
+        return fetch(request).then((response) => {
+          if (response && response.status === 200 && response.type === "basic") {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        });
       })
+    );
+    return;
+  }
+
+  // 4. Other static images/media: network-first with cache fallback, NEVER return HTML on fail
+  if (url.pathname.startsWith("/images/") || url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === "basic") {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          return new Response(null, { status: 504, statusText: "Gateway Timeout (Offline)" });
+        })
     );
   }
 });
@@ -147,22 +170,62 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetPath = event.notification.data?.url || "/?view=admin";
-  const targetUrl = new URL(targetPath, self.location.origin).href;
-
   event.waitUntil(
-    self.clients
-      .matchAll({ type: "window", includeUncontrolled: true })
-      .then((windowClients) => {
-        for (const client of windowClients) {
-          if (client.url.startsWith(self.location.origin) && "focus" in client) {
-            return client.navigate(targetUrl).then((c) => c?.focus?.());
+    (async () => {
+      const data = event.notification.data || {};
+      const rawUrl = data.url || "/?view=admin";
+      const storeId = data.storeId;
+
+      let targetUrl;
+      try {
+        const parsed = new URL(rawUrl, self.location.origin);
+        // Strict same-origin validation: must be exact same origin and http/https protocol
+        if (
+          parsed.origin !== self.location.origin ||
+          (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+        ) {
+          targetUrl = new URL("/?view=admin", self.location.origin);
+        } else {
+          targetUrl = parsed;
+        }
+      } catch {
+        targetUrl = new URL("/?view=admin", self.location.origin);
+      }
+
+      // Preserve storeId if specified and not main
+      if (storeId && storeId !== "main" && !targetUrl.searchParams.has("store")) {
+        targetUrl.searchParams.set("store", storeId);
+      }
+
+      const targetHref = targetUrl.href;
+
+      // Find all existing browser windows
+      const windowClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of windowClients) {
+        try {
+          const clientUrl = new URL(client.url);
+          // Only reuse an existing window if it is an admin window for the exact same store!
+          // NEVER hijack a customer ordering / draft tab!
+          if (
+            clientUrl.origin === self.location.origin &&
+            clientUrl.searchParams.get("view") === "admin"
+          ) {
+            const clientStore = clientUrl.searchParams.get("store") || "main";
+            const targetStore = targetUrl.searchParams.get("store") || "main";
+            if (clientStore === targetStore && "focus" in client) {
+              await client.navigate(targetHref);
+              return client.focus();
+            }
           }
+        } catch {
+          // ignore parsing error
         }
-        if (self.clients.openWindow) {
-          return self.clients.openWindow(targetUrl);
-        }
-        return undefined;
-      })
+      }
+
+      // If no suitable admin window is open, open a new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetHref);
+      }
+    })()
   );
 });

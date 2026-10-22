@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Bell, BellOff, BellRing, Check, LoaderCircle, AlertTriangle, Send } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, BellOff, BellRing, LoaderCircle, AlertTriangle, Send } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
 
 function getOrCreateDeviceId(): string {
@@ -25,6 +25,15 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+const withTimeout = <T,>(promise: Promise<T>, ms = 5000): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Service Worker không phản hồi kịp thời")), ms)
+    ),
+  ]);
+};
+
 type PushState = "checking" | "unsupported" | "server_disabled" | "denied" | "ready" | "subscribed";
 
 export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
@@ -34,46 +43,60 @@ export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [vapidKey, setVapidKey] = useState<string | null>(null);
 
-  const checkStatus = useCallback(async () => {
-    if (typeof window === "undefined") return;
+  useEffect(() => {
+    let cancelled = false;
 
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-      setState("unsupported");
-      return;
-    }
+    const checkStatus = async () => {
+      // Async boundary prevents synchronous setState inside effect
+      await Promise.resolve();
+      if (cancelled) return;
 
-    if (Notification.permission === "denied") {
-      setState("denied");
-      return;
-    }
+      if (typeof window === "undefined") return;
 
-    try {
-      const config = await api<{ enabled: boolean; vapidPublicKey: string | null }>("admin/push/config");
-      if (!config.enabled || !config.vapidPublicKey) {
-        setState("server_disabled");
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        if (!cancelled) setState("unsupported");
         return;
       }
-      setVapidKey(config.vapidPublicKey);
 
-      const deviceId = getOrCreateDeviceId();
-      const status = await api<{ subscribed: boolean }>(`admin/push/status?deviceId=${encodeURIComponent(deviceId)}`);
-
-      const reg = await navigator.serviceWorker.ready;
-      const existingSub = await reg.pushManager.getSubscription();
-
-      if (status.subscribed && existingSub) {
-        setState("subscribed");
-      } else {
-        setState("ready");
+      if (Notification.permission === "denied") {
+        if (!cancelled) setState("denied");
+        return;
       }
-    } catch {
-      setState("ready");
-    }
-  }, []);
 
-  useEffect(() => {
+      try {
+        const config = await api<{ enabled: boolean; vapidPublicKey: string | null }>("admin/push/config");
+        if (cancelled) return;
+
+        if (!config.enabled || !config.vapidPublicKey) {
+          setState("server_disabled");
+          return;
+        }
+        setVapidKey(config.vapidPublicKey);
+
+        const deviceId = getOrCreateDeviceId();
+        const status = await api<{ subscribed: boolean }>(`admin/push/status?deviceId=${encodeURIComponent(deviceId)}`);
+        if (cancelled) return;
+
+        const reg = await withTimeout(navigator.serviceWorker.ready, 4000);
+        const existingSub = await reg.pushManager.getSubscription();
+        if (cancelled) return;
+
+        if (status.subscribed && existingSub) {
+          setState("subscribed");
+        } else {
+          setState("ready");
+        }
+      } catch {
+        if (!cancelled) setState("ready");
+      }
+    };
+
     void checkStatus();
-  }, [checkStatus]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubscribe = async () => {
     if (loading || !vapidKey) return;
@@ -88,7 +111,7 @@ export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
         return;
       }
 
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await withTimeout(navigator.serviceWorker.ready, 5000);
       let sub = await reg.pushManager.getSubscription();
 
       if (!sub) {
@@ -123,10 +146,13 @@ export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
       });
 
       setState("subscribed");
-      notify("Đã bật thông báo đẩy thành công cho thiết bị này!");
+      notify("Đã bật thông báo đẩy trên thiết bị này.");
     } catch (err) {
-      console.error("Push subscribe error:", err);
-      notify(err instanceof ApiError ? err.message : "Chưa bật được thông báo đẩy. Vui lòng kiểm tra lại thiết bị.");
+      if (err instanceof ApiError && err.status === 409) {
+        notify("Thiết bị này đã gắn với tài khoản khác. Vui lòng đăng xuất tài khoản cũ.");
+      } else {
+        notify((err as Error).message || "Không thể kích hoạt thông báo đẩy.");
+      }
     } finally {
       setLoading(false);
     }
@@ -137,24 +163,30 @@ export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
     setLoading(true);
 
     try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        await sub.unsubscribe();
+      const deviceId = getOrCreateDeviceId();
+      let endpoint: string | undefined;
+
+      try {
+        const reg = await withTimeout(navigator.serviceWorker.ready, 4000);
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          endpoint = sub.endpoint;
+        }
+      } catch {
+        // tolerate timeout
       }
 
-      const deviceId = getOrCreateDeviceId();
       await api("admin/push/unsubscribe", {
         method: "POST",
-        body: JSON.stringify({ deviceId }),
+        body: JSON.stringify({ deviceId, endpoint }),
       });
 
+      // NOTE: We do NOT call sub.unsubscribe() so other store subscriptions remain intact
       setState("ready");
       setMenuOpen(false);
-      notify("Đã tắt thông báo đẩy trên thiết bị này.");
+      notify("Đã tắt thông báo đẩy cho cửa hàng này trên máy.");
     } catch (err) {
-      console.error("Push unsubscribe error:", err);
-      notify("Chưa hủy được đăng ký thông báo.");
+      notify((err as Error).message || "Chưa tắt được thông báo. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
@@ -172,17 +204,25 @@ export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
       });
 
       if (res.success) {
-        notify("Đã gửi thông báo thử! Kiểm tra màn hình thông báo của bạn.");
+        notify("Đã gửi thông báo thử nghiệm thành công!");
       } else {
-        notify(res.error || "Gửi thử không thành công.");
+        notify(res.error || "Gửi thử nghiệm không thành công.");
       }
     } catch (err) {
-      notify(err instanceof ApiError ? err.message : "Chưa gửi được thông báo thử.");
+      notify((err as Error).message || "Lỗi khi gửi thông báo thử nghiệm.");
     } finally {
       setTestTesting(false);
-      setMenuOpen(false);
     }
   };
+
+  if (state === "checking") {
+    return (
+      <button type="button" disabled className="secondary icon-label opacity-70 cursor-wait">
+        <LoaderCircle size={17} className="animate-spin text-slate-500" />
+        <span>Đang kiểm tra push…</span>
+      </button>
+    );
+  }
 
   if (state === "unsupported") {
     return (
@@ -213,7 +253,17 @@ export function AdminPushToggle({ notify }: { notify: (msg: string) => void }) {
   }
 
   if (state === "server_disabled") {
-    return null;
+    return (
+      <button
+        type="button"
+        className="secondary icon-label opacity-70 cursor-not-allowed"
+        title="Tính năng Web Push chưa được cấu hình VAPID trên máy chủ quán."
+        onClick={() => notify("Tính năng Web Push chưa được bật trên máy chủ quán (thiếu cấu hình VAPID).")}
+      >
+        <BellOff size={17} />
+        <span>Push chưa cấu hình</span>
+      </button>
+    );
   }
 
   if (state === "subscribed") {

@@ -229,6 +229,15 @@ async function handleScoped(request:Request){
   }
   if(request.method==="PATCH"&&path==="admin/table"){
    allow("tables.manage");
+   if(b.action==="delete"){
+    const id=checkedText(b.id,10,true);
+    const existing=await db.prepare("SELECT id FROM dining_tables WHERE id = ?").bind(id).first();
+    if(!existing)throw new OrderError("Không tìm thấy bàn cần xóa.",404);
+    // One guarded write: a concurrently opened session or historical reference blocks deletion.
+    const removed=await db.prepare("DELETE FROM dining_tables WHERE id = ? AND NOT EXISTS (SELECT 1 FROM table_sessions WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM orders WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM service_requests WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_settlements WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_payment_receipts WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_transfers WHERE from_table_id = ? OR to_table_id = ?)").bind(id,id,id,id,id,id,id,id).run();
+    if(removed.meta.changes!==1)throw new OrderError("Bàn đang có lượt phục vụ hoặc lịch sử liên quan nên không thể xóa. Lịch sử được giữ nguyên; bạn vẫn có thể sửa tên bàn.",409);
+    return json({ok:true});
+   }
    const name=checkedText(b.name,30,true),zone=checkedText(b.zone,40,true);
    if(b.create!==undefined&&typeof b.create!=="boolean")throw new OrderError("Thao tác bàn không hợp lệ.");
    if(b.create===true){
@@ -238,7 +247,7 @@ async function handleScoped(request:Request){
     const previous=await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{value:string}>();
     const token=crypto.randomUUID().replaceAll("-","")+crypto.randomUUID().replaceAll("-","");
     if(!previous)await db.batch([
-     db.prepare("INSERT INTO dining_tables (id,name,zone,token) SELECT CAST(COALESCE((SELECT MAX(CAST(id AS INTEGER)) FROM dining_tables),0)+1 AS TEXT),?,?,? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = ?) AND NOT EXISTS (SELECT 1 FROM dining_tables WHERE lower(trim(name)) = lower(?) AND lower(trim(zone)) = lower(?))").bind(name,zone,token,key,name,zone),
+     db.prepare("INSERT INTO dining_tables (id,name,zone,token) SELECT CAST(COALESCE((SELECT MAX(n) FROM (SELECT CAST(id AS INTEGER) AS n FROM dining_tables UNION ALL SELECT CAST(json_extract(value,'$.id') AS INTEGER) AS n FROM settings WHERE key LIKE 'table-create:%')),0)+1 AS TEXT),?,?,? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = ?) AND NOT EXISTS (SELECT 1 FROM dining_tables WHERE lower(trim(name)) = lower(?) AND lower(trim(zone)) = lower(?))").bind(name,zone,token,key,name,zone),
      db.prepare("INSERT OR IGNORE INTO settings (key,value) SELECT ?,json_object('id',id,'name',name,'zone',zone) FROM dining_tables WHERE token = ?").bind(key,token)
     ]);
     const saved=await db.prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{value:string}>();

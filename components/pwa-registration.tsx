@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
 
+let localUserConsented = false;
+
 export function PwaRegistration() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [showUpdate, setShowUpdate] = useState(false);
@@ -13,7 +15,9 @@ export function PwaRegistration() {
     let refreshing = false;
 
     const handleControllerChange = () => {
-      if (!refreshing) {
+      // CRITICAL: Only reload if the user in THIS tab explicitly consented to update.
+      // A background update from another tab or first SW install must NEVER forcefully reload an active tab!
+      if (localUserConsented && !refreshing) {
         refreshing = true;
         window.location.reload();
       }
@@ -53,45 +57,77 @@ export function PwaRegistration() {
 
   const handleUpdate = () => {
     if (waitingWorker) {
+      localUserConsented = true;
       waitingWorker.postMessage({ type: "SKIP_WAITING" });
     }
+  };
+
+  const handleDismiss = () => {
+    setShowUpdate(false);
   };
 
   if (!showUpdate) return null;
 
   return (
-    <div
-      role="alert"
-      className="fixed bottom-4 left-4 right-4 z-[9999] mx-auto max-w-md rounded-xl border border-emerald-800 bg-[#1e4635] p-3.5 text-white shadow-2xl transition-all sm:bottom-6 sm:right-6 sm:left-auto"
+    <aside
+      className="pwa-update-banner"
+      role="status"
+      aria-live="polite"
+      style={{
+        position: "fixed",
+        bottom: "max(1rem, env(safe-area-inset-bottom))",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 9999,
+        backgroundColor: "#064e3b",
+        color: "#f0fdf4",
+        padding: "0.75rem 1.25rem",
+        borderRadius: "9999px",
+        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.3)",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        fontSize: "0.875rem",
+        fontWeight: 500,
+        maxWidth: "calc(100vw - 2rem)",
+      }}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <RefreshCw className="h-5 w-5 shrink-0 text-emerald-300" />
-          <div className="text-sm">
-            <p className="font-semibold leading-tight">Đã có bản cập nhật mới</p>
-            <p className="text-xs text-emerald-200/90 leading-tight mt-0.5">
-              Tải lại để nhận tính năng và sửa lỗi mới nhất.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleUpdate}
-            className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-[#1e4635]"
-          >
-            Tải lại
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowUpdate(false)}
-            aria-label="Đóng thông báo"
-            className="rounded-lg p-1 text-emerald-200/80 hover:bg-emerald-900/60 hover:text-white"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-    </div>
+      <span>Có phiên bản mới của ứng dụng</span>
+      <button
+        type="button"
+        onClick={handleUpdate}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.375rem",
+          backgroundColor: "#10b981",
+          color: "#ffffff",
+          border: "none",
+          padding: "0.375rem 0.75rem",
+          borderRadius: "9999px",
+          cursor: "pointer",
+          fontWeight: 600,
+          fontSize: "0.8125rem",
+        }}
+      >
+        <RefreshCw size={14} />
+        Tải lại
+      </button>
+      <button
+        type="button"
+        onClick={handleDismiss}
+        aria-label="Đóng thông báo"
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "#a7f3d0",
+          cursor: "pointer",
+          display: "inline-flex",
+          padding: "0.25rem",
+        }}
+      >
+        <X size={16} />
+      </button>
+    </aside>
   );
 }
