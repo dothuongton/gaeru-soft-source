@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { resolveIdentity, isSelfAuthMode } from "../lib/auth";
 
 export type ChatGPTUser = {
   userId: string;
@@ -20,22 +21,15 @@ const CALLBACK_PATH = "/callback";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
-  const userId = requestHeaders.get(USER_ID_HEADER);
-  const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!userId || !email) return null;
-
-  const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get(USER_FULL_NAME_ENCODING_HEADER) === PERCENT_ENCODED_UTF8
-      ? safeDecodeURIComponent(encodedFullName)
-      : null;
+  const req = new Request("https://local.site/", { headers: requestHeaders });
+  const identity = await resolveIdentity(req);
+  if (!identity) return null;
 
   return {
-    userId,
-    displayName: fullName ?? email,
-    email,
-    fullName,
+    userId: identity.userId,
+    displayName: identity.displayName || identity.email,
+    email: identity.email,
+    fullName: identity.displayName || null,
   };
 }
 
@@ -45,7 +39,12 @@ export async function requireChatGPTUser(
   const user = await getChatGPTUser();
   if (user) return user;
 
-  redirect(chatGPTSignInPath(returnTo));
+  if (isSelfAuthMode()) {
+    const safeReturnTo = safeRelativeReturnPath(returnTo);
+    redirect(`/signin?returnTo=${encodeURIComponent(safeReturnTo)}`);
+  } else {
+    redirect(chatGPTSignInPath(returnTo));
+  }
 }
 
 export function chatGPTSignInPath(returnTo: string): string {
@@ -57,6 +56,22 @@ export function chatGPTSignOutPath(returnTo = "/"): string {
   const safeReturnTo = safeRelativeReturnPath(returnTo);
   return `${SIGN_OUT_PATH}?return_to=${encodeURIComponent(safeReturnTo)}`;
 }
+
+export function appSignInPath(returnTo: string): string {
+  if (isSelfAuthMode()) {
+    const safeReturnTo = safeRelativeReturnPath(returnTo);
+    return `/signin?returnTo=${encodeURIComponent(safeReturnTo)}`;
+  }
+  return chatGPTSignInPath(returnTo);
+}
+
+export function appSignOutPath(returnTo = "/"): string {
+  if (isSelfAuthMode()) {
+    return `/signin`;
+  }
+  return chatGPTSignOutPath(returnTo);
+}
+
 
 function safeRelativeReturnPath(value: string): string {
   if (!value.startsWith("/") || value.startsWith("//")) return "/";

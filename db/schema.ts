@@ -43,3 +43,54 @@ export const staffPushSubscriptions=sqliteTable("staff_push_subscriptions",{stor
 },table=>[primaryKey({columns:[table.storeId,table.id]}),uniqueIndex("staff_push_user_device_store_unique").on(table.storeId,table.userId,table.deviceId),uniqueIndex("staff_push_endpoint_hash_store_unique").on(table.storeId,table.endpointHash),index("staff_push_user_store").on(table.storeId,table.userId),index("staff_push_updated").on(table.storeId,table.updatedAt)]);
 
 export const stores=sqliteTable("stores",{status:text("status").notNull().default("active"),source:text("source").notNull().default("platform"),ownerName:text("owner_name").notNull().default(""),phone:text("phone").notNull().default(""),updatedAt:integer("updated_at").notNull().default(0),updatedBy:text("updated_by").notNull().default(""),id:text("id").primaryKey(),name:text("name").notNull(),adminEmail:text("admin_email").notNull(),requestId:text("request_id").notNull().unique(),createdBy:text("created_by").notNull(),createdAt:integer("created_at").notNull()});
+
+export const authCredentials = sqliteTable("auth_credentials", {
+  email: text("email").primaryKey(),
+  userId: text("user_id").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  displayName: text("display_name").notNull().default(""),
+  mustChangePassword: integer("must_change_password").notNull().default(0),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const authSessions = sqliteTable("auth_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  email: text("email").notNull(),
+  userId: text("user_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  lastSeenAt: integer("last_seen_at").notNull(),
+}, table => [
+  index("auth_sessions_email_idx").on(table.email),
+  index("auth_sessions_expires_at_idx").on(table.expiresAt),
+]);
+
+export const authTokens = sqliteTable("auth_tokens", {
+  tokenHash: text("token_hash").primaryKey(),
+  email: text("email").notNull(),
+  purpose: text("purpose").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  usedAt: integer("used_at"),
+  createdAt: integer("created_at").notNull(),
+}, table => [
+  index("auth_tokens_email_idx").on(table.email),
+]);
+
+export const authLoginAttempts = sqliteTable("auth_login_attempts", {
+  attemptKey: text("attempt_key").primaryKey(),
+  failCount: integer("fail_count").notNull().default(0),
+  lockedUntil: integer("locked_until").notNull().default(0),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const authAudit = sqliteTable("auth_audit", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull(),
+  action: text("action").notNull(),
+  detailJson: text("detail_json").notNull().default("{}"),
+  createdAt: integer("created_at").notNull(),
+}, table => [
+  index("auth_audit_email_created_idx").on(table.email, table.createdAt),
+]);
+

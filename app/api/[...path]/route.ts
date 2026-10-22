@@ -15,6 +15,21 @@ import {getStaffAccess,updateOwnProfile,listStaffAccounts,createStaffAccount,upd
 import {hasPermission,type Permission} from "@/lib/staff-permissions";
 import {adminDashboard} from "@/lib/admin-dashboard";
 import {getVapidConfig, subscribeStaffDevice, unsubscribeStaffDevice, getStaffSubscriptionStatus, dispatchStaffPush, sendTestPush} from "@/lib/staff-push";
+import {
+  ensurePlatformSchema,
+  isSelfAuthMode,
+  verifyCsrf,
+  resolveIdentity,
+  loginWithPassword,
+  logoutSession,
+  setPasswordWithToken,
+  changePassword,
+  bootstrapOwner,
+  canBootstrap,
+  createActivationToken,
+  createResetToken,
+  revokeUserSessions,
+} from "@/lib/auth";
 export const dynamic="force-dynamic";
 async function orderHash(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value))),byte=>byte.toString(16).padStart(2,"0")).join("");}
 async function matchesOrderHash(savedHash:unknown,currentHash:string,sessionId:string,body:Record<string,unknown>){
@@ -60,6 +75,26 @@ async function handleScoped(request:Request){
   if(path==="platform/stores"&&request.method==="PATCH")return json(await updateStoreStatus(request,b));
   if(path==="admin/accounts"&&request.method==="POST"){allow("staff.manage");return json(await createStaffAccount(access!,b),201);}
   if(path==="admin/accounts"&&request.method==="PATCH"){allow("staff.manage");return json(await updateStaffAccount(access!,b));}
+  if(path==="admin/accounts/activation-link"&&request.method==="POST"){
+   allow("staff.manage");
+   const origin=new URL(request.url).origin;
+   const actorEmail = access!.email || access!.userId || "system";
+   const activationUrl=await createActivationToken(actorEmail,String(b.email),origin);
+   return json({activationUrl});
+  }
+  if(path==="admin/accounts/reset-link"&&request.method==="POST"){
+   allow("staff.manage");
+   const origin=new URL(request.url).origin;
+   const actorEmail = access!.email || access!.userId || "system";
+   const resetUrl=await createResetToken(actorEmail,String(b.email),origin);
+   return json({resetUrl});
+  }
+  if(path==="admin/accounts/revoke-sessions"&&request.method==="POST"){
+   allow("staff.manage");
+   const actorEmail = access!.email || access!.userId || "system";
+   await revokeUserSessions(actorEmail,String(b.email));
+   return json({ok:true});
+  }
   if(path==="admin/push/subscribe"&&request.method==="POST"){
    const userId = access!.userId || access!.email;
    if(!userId)throw new OrderError("Không xác định được danh tính nhân viên.",401);
@@ -266,7 +301,63 @@ async function handleScoped(request:Request){
  }catch(e){if(e instanceof OrderError)return json({error:e.message},e.status);console.error("QR ordering API error",e instanceof Error?e.message:"Unknown error");return json({error:"Chưa kết nối được với quán. Vui lòng thử lại."},500);}
 }
 async function handle(request:Request){
- try{const store=await resolveStore(request);return await inStore(store.id,async()=>{if(store.status!=="active"&&!(await getStaffAccess(request)).isOwner)throw new OrderError("Cửa hàng đang tạm khóa. Vui lòng liên hệ GAERU Soffware hoặc truy cập /gaeru để chọn cửa hàng khác.",403);return handleScoped(request);});}
+ try{
+  verifyCsrf(request);
+  await ensurePlatformSchema();
+  const url=new URL(request.url),path=url.pathname.replace(/^\/api\//,"");
+
+  if(path.startsWith("auth/")){
+   if(path==="auth/login"&&request.method==="POST"){
+    const b=await readBody(request) as {email?:unknown;password?:unknown};
+    const result=await loginWithPassword(request,b);
+    const accessReq=new Request(request.url,{headers:{"cookie":result.cookie.split(";")[0]}});
+    const access=await getStaffAccess(accessReq);
+    return json({access,mustChangePassword:result.identity.mustChangePassword??false},200,{"Set-Cookie":result.cookie});
+   }
+   if(path==="auth/logout"&&request.method==="POST"){
+    const result=await logoutSession(request);
+    return json({ok:true},200,{"Set-Cookie":result.cookie});
+   }
+   if(path==="auth/set-password"&&request.method==="POST"){
+    const b=await readBody(request) as {token?:unknown;password?:unknown;displayName?:unknown};
+    const result=await setPasswordWithToken(request,b);
+    const accessReq=new Request(request.url,{headers:{"cookie":result.cookie.split(";")[0]}});
+    const access=await getStaffAccess(accessReq);
+    return json({ok:true,access},200,{"Set-Cookie":result.cookie});
+   }
+   if(path==="auth/change-password"&&request.method==="POST"){
+    const b=await readBody(request) as {currentPassword?:unknown;newPassword?:unknown};
+    await changePassword(request,b);
+    return json({ok:true});
+   }
+   if(path==="auth/bootstrap"&&request.method==="POST"){
+    const b=await readBody(request) as {setupToken?:unknown;email?:unknown;displayName?:unknown;password?:unknown};
+    const result=await bootstrapOwner(request,b);
+    const accessReq=new Request(request.url,{headers:{"cookie":result.cookie.split(";")[0]}});
+    const access=await getStaffAccess(accessReq);
+    return json({ok:true,access},200,{"Set-Cookie":result.cookie});
+   }
+   if(path==="auth/bootstrap-status"&&request.method==="GET"){
+    return json({canBootstrap:await canBootstrap()});
+   }
+   return json({error:"Thao tác không được hỗ trợ."},405);
+  }
+
+  if(isSelfAuthMode()){
+   const identity=await resolveIdentity(request);
+   if(identity?.mustChangePassword&&path!=="account"&&path!=="auth/change-password"&&path!=="auth/logout"){
+    return json({error:"Vui lòng đổi mật khẩu trước khi tiếp tục.",code:"PASSWORD_CHANGE_REQUIRED"},403);
+   }
+  }
+
+  const store=await resolveStore(request);
+  return await inStore(store.id,async()=>{
+   if(store.status!=="active"&&!(await getStaffAccess(request)).isOwner){
+    throw new OrderError("Cửa hàng đang tạm khóa. Vui lòng liên hệ GAERU Soffware hoặc truy cập /gaeru để chọn cửa hàng khác.",403);
+   }
+   return handleScoped(request);
+  });
+ }
  catch(error){if(error instanceof OrderError)return json({error:error.message},error.status);console.error("Store request failed",error instanceof Error?error.message:"Unknown");return json({error:"Chưa kết nối được cửa hàng. Vui lòng thử lại."},500);}
 }
 export const GET=handle;

@@ -27,6 +27,8 @@ function loadApp(entry = "route") {
     storeDatabase:"lib/store-database.ts",storePlatform:"lib/store-platform.ts",
     server: "lib/server.ts",
     menu: "lib/menu.ts",
+    auth: "lib/auth.ts",
+    authCrypto: "lib/auth-crypto.ts",
     qrEntry: "lib/qr-entry.ts",
     sessions: "lib/table-sessions.ts",
     revenue: "lib/revenue-server.ts",
@@ -63,6 +65,8 @@ function loadApp(entry = "route") {
       if (specifier === "cloudflare:workers") return { env: environment };
       if (specifier === "@/lib/server" || specifier === "./server") return load("server");
       if (specifier === "@/lib/menu" || specifier === "./menu") return load("menu");
+      if (specifier === "@/lib/auth" || specifier === "./auth") return load("auth");
+      if (specifier === "./auth-crypto") return load("authCrypto");
       if (specifier === "@/lib/qr-entry" || specifier === "./qr-entry") return load("qrEntry");
       if (specifier === "@/lib/table-sessions" || specifier === "./table-sessions") return load("sessions");
       if (specifier === "@/lib/revenue-server" || specifier === "./revenue-server") return load("revenue");

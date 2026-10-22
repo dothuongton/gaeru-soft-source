@@ -244,7 +244,7 @@ export function StaffAccountsPanel({access, onAccessRefresh}: StaffAccountsPanel
 
   useEffect(() => {
     alive.current = true;
-    setLoginLink(window.location.origin + "/signin-with-chatgpt?return_to=" + encodeURIComponent(withStore("/?view=admin&tab=accounts")));
+    setLoginLink(window.location.origin + "/signin?returnTo=" + encodeURIComponent(withStore("/?view=admin&tab=accounts")));
     return () => {alive.current = false; readEpoch.current += 1;};
   }, []);
 
@@ -272,6 +272,45 @@ export function StaffAccountsPanel({access, onAccessRefresh}: StaffAccountsPanel
     catch {loginInput.current?.focus(); loginInput.current?.select(); setCopyNotice("Chạm giữ vào liên kết bên dưới để sao chép và gửi cho nhân viên.");}
   }
 
+  async function generateActivation(email: string) {
+    try {
+      const res = await api<{ activationUrl: string }>("admin/accounts/activation-link", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      await navigator.clipboard.writeText(res.activationUrl);
+      setNotice(`Đã sao chép liên kết kích hoạt (24h) cho ${email}: ${res.activationUrl}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chưa tạo được liên kết kích hoạt.");
+    }
+  }
+
+  async function generateReset(email: string) {
+    try {
+      const res = await api<{ resetUrl: string }>("admin/accounts/reset-link", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      await navigator.clipboard.writeText(res.resetUrl);
+      setNotice(`Đã sao chép liên kết đặt lại mật khẩu (1h) cho ${email}: ${res.resetUrl}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chưa tạo được liên kết đặt lại mật khẩu.");
+    }
+  }
+
+  async function revokeSessions(email: string) {
+    if (!window.confirm(`Bạn có chắc muốn đăng xuất tất cả thiết bị của tài khoản ${email}?`)) return;
+    try {
+      await api<{ ok: boolean }>("admin/accounts/revoke-sessions", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+      setNotice(`Đã đăng xuất toàn bộ thiết bị của tài khoản ${email}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Chưa đăng xuất được thiết bị.");
+    }
+  }
+
   function saved(account: StaffAccount, message: string) {
     readEpoch.current += 1;
     setSnapshot(current => current ? {...current, accounts: current.accounts.some(value => value.id === account.id) ? current.accounts.map(value => value.id === account.id && value.version <= account.version ? account : value) : [account, ...current.accounts]} : {accounts: [account], audit: []});
@@ -292,7 +331,13 @@ export function StaffAccountsPanel({access, onAccessRefresh}: StaffAccountsPanel
           const ownAccount = isOwnAccount(account, access);
           const editable = canEditAccount(account, access);
           return <article className={"sa-account-card" + (account.status === "suspended" ? " is-suspended" : "")} key={account.id}><div className="sa-account-title"><span className="sa-account-avatar">{account.protected ? <ShieldCheck size={24}/> : <UserRound size={24}/>}</span><div><h4>{account.name}{ownAccount && <small>Bạn</small>}</h4><p>{account.email}</p></div></div><div className="sa-card-badges"><span className="sa-role-tag">{roleLabel(account)}</span><span className={"sa-status " + account.status}>{account.status === "active" ? "Hoạt động" : "Tạm ngưng"}</span></div><p className="sa-binding-state">{account.userBound ? "Đã liên kết với tài khoản đăng nhập" : "Chờ nhân viên đăng nhập lần đầu"}</p><PermissionSummary permissions={account.permissions}/>{account.lastLoginAt != null && <p className="sa-last-login">Đăng nhập gần nhất: <time dateTime={new Date(account.lastLoginAt).toISOString()}>{dateTime(account.lastLoginAt)}</time></p>}
-            {editable ? <div className="sa-card-actions"><button type="button" className="sa-secondary" onClick={() => {setNotice(""); setEditor({account, intent: "edit"});}}><Pencil size={19}/>Chỉnh quyền</button><button type="button" className={"sa-secondary " + (account.status === "active" ? "sa-suspend" : "")} onClick={() => {setNotice(""); setEditor({account, intent: account.status === "active" ? "suspend" : "reactivate"});}}>{account.status === "active" ? <ShieldOff size={19}/> : <ShieldCheck size={19}/>}<span>{account.status === "active" ? "Tạm ngưng" : "Kích hoạt lại"}</span></button></div> : <p className="sa-readonly"><LockKeyhole size={17}/>{account.protected ? "Tài khoản được bảo vệ" : ownAccount ? "Không tự thay đổi quyền của mình" : "Ngoài phạm vi quyền được quản lý"}</p>}
+            {editable ? <div className="sa-card-actions">
+              <button type="button" className="sa-secondary" onClick={() => {setNotice(""); setEditor({account, intent: "edit"});}}><Pencil size={19}/>Chỉnh quyền</button>
+              <button type="button" className={"sa-secondary " + (account.status === "active" ? "sa-suspend" : "")} onClick={() => {setNotice(""); setEditor({account, intent: account.status === "active" ? "suspend" : "reactivate"});}}>{account.status === "active" ? <ShieldOff size={19}/> : <ShieldCheck size={19}/>}<span>{account.status === "active" ? "Tạm ngưng" : "Kích hoạt lại"}</span></button>
+              <button type="button" className="sa-secondary" title="Tạo link kích hoạt tài khoản" onClick={() => void generateActivation(account.email)}><KeyRound size={17}/>Link kích hoạt</button>
+              <button type="button" className="sa-secondary" title="Tạo link đặt lại mật khẩu" onClick={() => void generateReset(account.email)}><RefreshCw size={17}/>Đặt lại MK</button>
+              <button type="button" className="sa-secondary" title="Đăng xuất khỏi mọi thiết bị" onClick={() => void revokeSessions(account.email)}><LogOut size={17}/>Đăng xuất thiết bị</button>
+            </div> : <p className="sa-readonly"><LockKeyhole size={17}/>{account.protected ? "Tài khoản được bảo vệ" : ownAccount ? "Không tự thay đổi quyền của mình" : "Ngoài phạm vi quyền được quản lý"}</p>}
           </article>;
         })}</div>}
       </section>

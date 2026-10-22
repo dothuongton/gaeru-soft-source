@@ -3,6 +3,7 @@ import {database} from "./server";
 import {OrderError,checkedText,validateShopLogo} from "./menu";
 import {ALL_PERMISSIONS,ROLE_PRESETS,canGrantPermissions,hasPermission,normalizePermissions,normalizeStaffEmail} from "./staff-permissions";
 import type {Permission,StaffAccess,StaffProfile,StaffAccount,StaffAccountResult,StaffAccountsResponse,StaffAudit,StaffRole,StaffStatus} from "./staff-permissions";
+import {resolveIdentity,getOwnerEmails} from "./auth";
 
 type StaffRow={id:string;email:string;name:string;user_id:string|null;role:StaffRole;permissions_json:string;status:StaffStatus;version:number;created_at:number;updated_at:number;last_login_at:number|null};
 type OwnerBinding={email:string;user_id:string;created_at:number;last_login_at:number};
@@ -12,18 +13,7 @@ type AccountInput={name:string;role:StaffRole;permissions:Permission[];status:St
 type SqlGuard={sql:string;values:(string|number)[]};
 
 const emptyAccess=(identity?:Identity):StaffAccess=>({authenticated:!!identity,userId:identity?.userId??null,email:identity?.email??null,isStaff:false,isOwner:false,account:null,permissions:[]});
-export const ownerEmails=()=>{
- if(env.STAFF_EMAILS===undefined)return ["dothuongton@gmail.com"];
- return Array.from(new Set(env.STAFF_EMAILS.split(",").map(normalizeStaffEmail).filter((email):email is string=>!!email)));
-};
-
-function identityFrom(request:Request):Identity|null{
- // These headers are supplied by the Sites authentication gateway, never by a
- // customer form. An email alone is deliberately insufficient authentication.
- const userId=request.headers.get("oai-authenticated-user-id")?.trim();
- const email=normalizeStaffEmail(request.headers.get("oai-authenticated-user-email"));
- return userId&&userId.length<=512&&!/[\u0000-\u001f\u007f]/.test(userId)&&email?{userId,email}:null;
-}
+export const ownerEmails = getOwnerEmails;
 
 function storedPermissions(raw:string):Permission[]{
  try{return normalizePermissions(JSON.parse(raw));}catch{return [];}
@@ -40,7 +30,7 @@ function ownerAccess(identity:Identity,binding:OwnerBinding):StaffAccess{
 
 /** Resolve fresh grants for every protected request; never trust cached client roles. */
 async function resolveStaffAccess(request:Request):Promise<StaffAccess>{
- const identity=identityFrom(request);
+ const identity=await resolveIdentity(request);
  if(!identity)return emptyAccess();
  const db=database(),protectedEmails=ownerEmails(),now=Date.now();
  const boundOwners=(await db.prepare("SELECT * FROM staff_owner_bindings WHERE user_id = ?").bind(identity.userId).all<OwnerBinding>()).results;
