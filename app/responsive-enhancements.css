@@ -147,7 +147,7 @@
   .app-shell .otb-filters > button > span { min-width: 24px; font-size: inherit; }
   .app-shell .otb-zone { font-size: var(--moc-ui-small); }
   .app-shell .otb-zone select { min-width: 0; font-size: max(16px, calc(18px * var(--moc-font-scale, 1))); }
-  .app-shell .otb-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; align-items: start; }
+  .app-shell .otb-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 18px; align-items: start; }
   .app-shell .otb-card { padding: 22px; scroll-margin-top: 24px; }
   .app-shell .otb-card-heading { gap: 12px; flex-wrap: wrap; }
   .app-shell .otb-card-heading h3 { font-size: max(26px, calc(36px * var(--moc-font-scale, 1))); }
@@ -330,6 +330,7 @@
   .app-shell .mobile-nav button { flex: 1 1 0; min-width: 0; min-height: 0; gap: 4px; justify-content: center; }
   .app-shell .mobile-nav button > svg { width: 22px; height: 22px; }
   .app-shell .mobile-nav button span { font-size: max(12px, calc(14px * var(--moc-font-scale, 1))); line-height: 1.25; }
+  .app-shell .mobile-cart-dock { left: 14px; right: 14px; width: calc(100% - 28px); bottom: calc(var(--moc-mobile-nav-height) + 10px + env(safe-area-inset-bottom)); }
   .app-shell .mobile-cart-bar { left: 14px; right: 14px; bottom: calc(var(--moc-mobile-nav-height) + 10px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; padding: 12px 14px; gap: 10px; text-align: left; }
   .app-shell .mobile-cart-bar > span:nth-child(2) { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; gap: 2px; font-size: max(16px, calc(18px * var(--moc-font-scale, 1))); }
   .app-shell .mobile-cart-bar strong { margin-left: 0; font-size: max(18px, calc(22px * var(--moc-font-scale, 1))); overflow-wrap: anywhere; }
@@ -533,4 +534,15 @@
  .app-shell .rev-range-form > :is(.rev-table-select,button) {grid-column:1/-1;width:100%;}
  .app-shell .rev-range-form input[type="date"] {box-sizing:border-box;width:100%;min-width:0;max-width:100%;padding:10px 8px;font-size:max(16px,calc(16px * var(--moc-font-scale,1)));min-height:48px;}
  .app-shell .rev-range-form input[type="date"]::-webkit-date-and-time-value {min-width:0;text-align:left;}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *,
+  .app-shell *::before,
+  .app-shell *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

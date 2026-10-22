@@ -45,6 +45,8 @@ function loadApp(entry = "route") {
     staffPermissions: "lib/staff-permissions.ts",
     staffAccess: "lib/staff-access.ts",
     adminDashboard: "lib/admin-dashboard.ts",
+    staffPush: "lib/staff-push.ts",
+    workerContext: "lib/worker-context.ts",
   };
   function load(name) {
     if (cache.has(name)) return cache.get(name).exports;
@@ -78,6 +80,15 @@ function loadApp(entry = "route") {
       if (specifier === "@/lib/staff-permissions" || specifier === "./staff-permissions") return load("staffPermissions");
       if (specifier === "@/lib/staff-access" || specifier === "./staff-access") return load("staffAccess");
       if (specifier === "@/lib/admin-dashboard" || specifier === "./admin-dashboard") return load("adminDashboard");
+      if (specifier === "@/lib/staff-push" || specifier === "./staff-push") return load("staffPush");
+      if (specifier === "@/lib/worker-context" || specifier === "./worker-context") return load("workerContext");
+      if (specifier === "@block65/webcrypto-web-push") return {
+        buildPushPayload: async () => ({
+          headers: { authorization: "vapid t=test", ttl: "60", "content-encoding": "aes128gcm" },
+          method: "POST",
+          body: new Uint8Array([1, 2, 3]),
+        }),
+      };
       throw new Error(`Unexpected application import: ${specifier}`);
     };
     new Function("require", "module", "exports", output)(require, compiledModule, compiledModule.exports);
