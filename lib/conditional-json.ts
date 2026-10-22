@@ -7,3 +7,10 @@ export async function conditionalJson(request:Request,data:unknown,extraHeaders?
  if(!headers.has("Set-Cookie")&&request.headers.get("If-None-Match")===etag)return new Response(null,{status:304,headers});
  headers.set("Content-Type","application/json; charset=utf-8");return new Response(body,{headers});
 }
+
+export function conditionalJsonWithEtag(request:Request,data:unknown,etag:string,extraHeaders?:HeadersInit){
+ const headers=new Headers(extraHeaders);headers.set("ETag",etag);headers.set("Cache-Control","no-store");headers.set("Vary","Cookie");headers.set("X-Content-Type-Options","nosniff");
+ if(!headers.has("Set-Cookie")&&request.headers.get("If-None-Match")===etag)return new Response(null,{status:304,headers});
+ const body=JSON.stringify(data);
+ headers.set("Content-Type","application/json; charset=utf-8");return new Response(body,{headers});
+}

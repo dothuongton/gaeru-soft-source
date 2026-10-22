@@ -178,10 +178,26 @@ export async function updateStaffAccount(access:StaffAccess,body:Record<string,u
 }
 
 
+const requestAccessCache = new WeakMap<Request, Promise<StaffAccess>>();
+
+export function invalidateRequestAccess(request: Request) {
+ requestAccessCache.delete(request);
+}
+
 export async function getStaffAccess(request:Request):Promise<StaffAccess>{
- const access=await resolveStaffAccess(request);
- if(access.isStaff&&access.userId){const row=await database().prepare("SELECT value FROM settings WHERE key = ?").bind("staff-profile:"+access.userId).first<{value:string}>();if(row)access.profile=JSON.parse(row.value) as StaffProfile;}
- return access;
+ let cached = requestAccessCache.get(request);
+ if (!cached) {
+  cached = (async () => {
+   const access = await resolveStaffAccess(request);
+   if (access.isStaff && access.userId) {
+    const row = await database().prepare("SELECT value FROM settings WHERE key = ?").bind("staff-profile:" + access.userId).first<{value:string}>();
+    if (row) access.profile = JSON.parse(row.value) as StaffProfile;
+   }
+   return access;
+  })();
+  requestAccessCache.set(request, cached);
+ }
+ return cached;
 }
 export async function updateOwnProfile(request:Request,body:Record<string,unknown>){
  const access=await getStaffAccess(request);

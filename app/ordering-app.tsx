@@ -1,62 +1,48 @@
 "use client";
-import {SignInForm} from "./signin-form";
-import {ItemExtrasEditor} from "./item-extras-editor";
-import {AdminScreenAwake} from "./admin-screen-awake";
-import {DishImageField} from "./dish-image-field";
-import {ShopLogoField} from "./shop-logo-field";
 
-import {useCallback,useEffect,useId,useRef,useState} from "react";
+import {useCallback,useEffect,useId,useRef,useState,lazy,Suspense} from "react";
 import type {ReactNode,FormEvent} from "react";
-import {ArrowRight,ArrowUpRight,Bell,BellRing,Check,CheckCheck,ChefHat,ChevronDown,ChevronLeft,Clock,Coffee,Download,Grid2X2,Leaf,LoaderCircle,MapPin,Minus,Plus,Printer,QrCode,ReceiptText,RefreshCw,Search,Settings2,ShoppingBag,SlidersHorizontal,Soup,Sparkles,UtensilsCrossed,X,AlertCircle,Pencil,LogIn,Store,CheckCircle2,Volume2,VolumeX,Flame,CakeSlice,Salad,Banknote,Landmark,WalletCards,ChartNoAxesCombined,Table2,UsersRound,LogOut,ShieldCheck} from "lucide-react";
+import {ArrowRight,ArrowUpRight,Bell,BellRing,Check,CheckCheck,ChevronDown,ChevronLeft,Clock,Coffee,Download,Grid2X2,Leaf,LoaderCircle,MapPin,Minus,Plus,Printer,QrCode,ReceiptText,RefreshCw,Search,ShoppingBag,SlidersHorizontal,Soup,Sparkles,UtensilsCrossed,X,AlertCircle,Pencil,LogIn,CheckCircle2,Flame,Salad,CakeSlice} from "lucide-react";
 import {TableConnectionPanel} from "./table-connection";
-import {RevenuePanel} from "./revenue-panel";
-import {StoreSwitcher,StoreManagement} from "./store-management";
 import {withStore} from "@/lib/store-links";
-import {StaffAccountsPanel} from "./staff-accounts-panel";
-import {hasPermission,type Permission,type StaffAccess} from "@/lib/staff-permissions";
-import {OpenTableBoard} from "./open-table-board";
-import {TablePaymentDialog} from "./table-payment-dialog";
-import {TableTransferDialog} from "./table-transfer-dialog";
-import {DisplaySettingsPanel} from "./display-settings-panel";
-import {ThemeSettingsPanel} from "./theme-settings-panel";
+import type {StaffAccess} from "@/lib/staff-permissions";
 import {DEFAULT_THEME_SETTINGS,normalizeThemeSettings,readableForeground,accentTextColor,type ThemeSettings} from "@/lib/theme-settings";
 import {DEFAULT_DISPLAY_SETTINGS,normalizeDisplaySettings,displayScale,type DisplaySettings} from "@/lib/display-settings";
 import {readSessionDraft,sessionDraftKey} from "@/lib/session-draft";
 import {api,ApiError} from "@/lib/api-client";
+import {AdaptiveScheduler} from "@/lib/adaptive-polling";
 import {mergeCartLine,normalizeItemChoice,prepareOrderSubmission,orderRequestBody,readPendingOrder,storePendingOrder,type PendingOrder,type OrderAction} from "@/lib/customer-order";
 import {readQrEntry} from "@/lib/qr-entry";
 import type {TableTransfer} from "@/lib/table-transfer-types";
-import {NewOrderPopup,useAdminOrderAlerts} from "./admin-order-alerts";
-import {AdminPushToggle} from "./admin-push-toggle";
 import {paymentLabels} from "@/lib/revenue-types";
 import type {PaymentMethod} from "@/lib/revenue-types";
-import {OpeningRequests,TableManagement,type AdminTableSession} from "./table-session-admin";
 import type {Connection,TableSession} from "@/lib/table-sessions";
 import {shopInitials,brandingRevision,categories,statuses,money,cleanSearch,defaultShop,sampleMenu,extrasFor,linePrice,salePrice,tastes} from "@/lib/menu";
 import type {Category,MenuItem,Promotion,DiningTable,Shop,CartLine,Order,OrderStatus,ServiceRequest} from "@/lib/menu";
 import "./interface-theme.css";
 import "./responsive-enhancements.css";
 import "./customer-order-flow.css";
-import {AdminStartup,AdminWorkspace,AdminSettingsHome,AdminBack,operationalTabs} from "./admin-workspace";
-import "./admin-workspace.css";
+import {AdminStartup} from "./admin-workspace";
+
+const AdminPanel = lazy(() => import("./admin-panel"));
 
 type View="menu"|"orders"|"about"|"admin";
 type MenuResponse={items:MenuItem[];shop:Shop;table:DiningTable;isStaff:boolean;access:StaffAccess;preview:boolean;connection:Connection;displaySettings:DisplaySettings;themeSettings:ThemeSettings};
-type AdminData={compact?:boolean;access:StaffAccess;items:MenuItem[];shop:Shop;tables:DiningTable[];orders:Order[];calls:ServiceRequest[];sessions:TableSession[];transfers:TableTransfer[];displaySettings:DisplaySettings;themeSettings:ThemeSettings;stats:{todayCount:number|null;todayCollected:number|null}};
+export type AdminData={compact?:boolean;access:StaffAccess;items:MenuItem[];shop:Shop;tables:DiningTable[];orders:Order[];calls:ServiceRequest[];sessions:TableSession[];transfers:TableTransfer[];displaySettings:DisplaySettings;themeSettings:ThemeSettings;stats:{todayCount:number|null;todayCollected:number|null}};
 const catIcons={all:Grid2X2,main:Soup,light:Salad,drink:Coffee,dessert:CakeSlice};
 
 const safeSet=(key:string,value:string)=>{try{localStorage.setItem(key,value);}catch{/* The active session can still order when storage is restricted. */}};
 const browserStorage=()=>{try{return window.localStorage;}catch{return null;}};
-function time(n:number){return new Date(n).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Ho_Chi_Minh"});}
-function date(n:number){return new Date(n).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit",timeZone:"Asia/Ho_Chi_Minh"});}
-function Modal({title,children,onClose,wide=false}:{title:string;children:ReactNode;onClose:()=>void;wide?:boolean}){
+export function time(n:number){return new Date(n).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Ho_Chi_Minh"});}
+export function date(n:number){return new Date(n).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit",timeZone:"Asia/Ho_Chi_Minh"});}
+export function Modal({title,children,onClose,wide=false}:{title:string;children:ReactNode;onClose:()=>void;wide?:boolean}){
  const ref=useRef<HTMLDialogElement>(null),id=useId();
  useEffect(()=>{const dialog=ref.current,previous=document.activeElement as HTMLElement|null;dialog?.showModal();const overflow=document.body.style.overflow;document.body.style.overflow="hidden";return()=>{document.body.style.overflow=overflow;previous?.focus({preventScroll:true});};},[]);
  return <dialog ref={ref} className={"modal "+(wide?"wide":"")} aria-labelledby={id} onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===ref.current){const r=ref.current!.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose();}}}><div className="modal-header"><h2 id={id}>{title}</h2><button className="icon-btn" aria-label="Đóng" onClick={onClose}><X size={21}/></button></div>{children}</dialog>;
 }
 function Brand({shop=defaultShop}:{shop?:Shop}){return <span className="brand"><span className="brand-mark">{shop.logo?<img src={shop.logo} alt={"Logo "+shop.name}/>:<span className="brand-initials">{shopInitials(shop.name)}</span>}</span><span><strong>{shop.name}</strong><small>{shop.tagline}</small></span></span>;}
 function Empty({icon:Icon=ShoppingBag,title,children}:{icon?:typeof ShoppingBag;title:string;children:ReactNode}){return <div className="empty-state"><div className="empty-icon"><Icon size={36} strokeWidth={1.25}/><Sparkles size={16}/></div><h3>{title}</h3><p>{children}</p></div>;}
-function FoodImage({src,alt,className=""}:{src:string;alt:string;className?:string}){return <img src={src} alt={alt} className={className} loading="lazy" onError={e=>{if(!e.currentTarget.src.endsWith("/images/hero.webp"))e.currentTarget.src="/images/hero.webp";}}/>;}
+export function FoodImage({src,alt,className=""}:{src:string;alt:string;className?:string}){return <img src={src} alt={alt} className={className} loading="lazy" onError={e=>{if(!e.currentTarget.src.endsWith("/images/hero.webp"))e.currentTarget.src="/images/hero.webp";}}/>;}
 
 export default function OrderingApp({initialShop=defaultShop,initialView="menu"}:{initialShop?:Shop;initialView?:View}){
  const customerShell=useRef<HTMLDivElement>(null);
@@ -133,7 +119,7 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
  useEffect(()=>{
   if(!ready)return;
   document.title=shop.name+" — "+(view==="admin"?"Quản trị cửa hàng":"Gọi món tại bàn");
-  const href=withStore("/api/branding-icon?v="+brandingRevision(shop));
+  const href = shop.logo && shop.logo.includes("/api/branding-icon") ? withStore(shop.logo) : withStore("/api/branding-icon?v=" + brandingRevision(shop));
   for(const rel of ["icon","shortcut icon","apple-touch-icon"]){let link=document.head.querySelector<HTMLLinkElement>('link[rel="'+rel+'"]');if(!link){link=document.createElement("link");link.rel=rel;document.head.appendChild(link);}link.href=href;link.removeAttribute("type");}
   const description=document.head.querySelector('meta[name="description"]');if(description)description.setAttribute("content",shop.name+" · "+shop.tagline+" · "+shop.address);
  },[shop,view,ready]);
@@ -173,16 +159,33 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
   const dismiss=()=>{const notice=addedNoticeRef.current;if(notice&&(notice.matches(":hover")||notice.contains(document.activeElement))){timer=setTimeout(dismiss,1000);return;}setAddedNotice(null);};
   timer=setTimeout(dismiss,5000);return()=>clearTimeout(timer);
  },[addedNotice]);
- const loadOrders=useCallback(async()=>{
+ const loadOrders=useCallback(async(throwOnError=false)=>{
   const current=connectionRef.current;if(!table||current.state!=="active"||!current.session||current.session.table_id!==table.id)return;
   const id=current.session.id,tableId=table.id,epoch=++ordersEpoch.current;
   const stillCurrent=()=>epoch===ordersEpoch.current&&connectionRef.current.state==="active"&&connectionRef.current.session?.id===id&&connectionRef.current.session?.table_id===tableId;
   try{const d=await api<{orders:Order[]}>("orders?table="+encodeURIComponent(table.token)+"&session="+encodeURIComponent(id));if(stillCurrent()){setOrders(d.orders);setSyncError("");}}
-  catch(e){if(stillCurrent()){setSyncError((e as Error).message);void loadMenu().catch(()=>{});}}
+  catch(e){if(stillCurrent()){setSyncError((e as Error).message);void loadMenu().catch(()=>{});}if(throwOnError)throw e;}
  },[table?.token,table?.id,connection.state,connection.session?.id,loadMenu]);
- useEffect(()=>{if(!ready||view==="admin")return;void loadOrders();const interval=setInterval(()=>{if(document.visibilityState==="visible")void loadOrders();},7000);return()=>clearInterval(interval);},[ready,view,loadOrders]);
  const canOrder=ready&&connection.state==="active"&&!!connection.session;
- useEffect(()=>{if(!ready||view==="admin")return;const refresh=()=>{if(document.visibilityState==="visible")void loadMenu().catch(()=>{});};const interval=setInterval(refresh,canOrder?5000:20000);document.addEventListener("visibilitychange",refresh);return()=>{clearInterval(interval);document.removeEventListener("visibilitychange",refresh);};},[ready,view,loadMenu,canOrder]);
+ const ordersPollerRef=useRef<AdaptiveScheduler|null>(null);
+ const menuPollerRef=useRef<AdaptiveScheduler|null>(null);
+ useEffect(()=>{
+  if(!ready||view==="admin")return;
+  ordersPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadOrders(true);},baseIntervalMs:10000,maxIntervalMs:30000,pauseWhenHidden:true});
+  ordersPollerRef.current.start();
+  return()=>{ordersPollerRef.current?.stop();ordersPollerRef.current=null;};
+ },[ready,view,loadOrders]);
+ useEffect(()=>{
+  if(!ready||view==="admin")return;
+  const baseInterval=canOrder?10000:30000;
+  if(!menuPollerRef.current){
+   menuPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadMenu();},baseIntervalMs:baseInterval,maxIntervalMs:30000,pauseWhenHidden:true});
+   menuPollerRef.current.start();
+  }else{
+   menuPollerRef.current.setBaseInterval(baseInterval);
+  }
+  return()=>{menuPollerRef.current?.stop();menuPollerRef.current=null;};
+ },[ready,view,loadMenu,canOrder]);
  async function requestTable(customerName:string){if(!table||!ready)throw new Error("Vui lòng tải lại mã QR tại bàn.");const d=await api<{connection:Connection}>("table-session",{method:"POST",body:JSON.stringify({tableToken:table.token,customerName})});connectionRef.current=d.connection;setConnection(d.connection);await loadMenu().catch(()=>{});notify(d.connection.state==="active"?"Bàn đã được mở. Bạn có thể gọi món.":"Đã gửi yêu cầu mở bàn đến quản trị.");}
  function openCustomerCancel(order:Order){setCustomerCancel(order);setCancelReason("Đặt nhầm món");setCancelDetail("");setCancelError("");}
  async function submitCustomerCancel(){
@@ -293,7 +296,7 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
  return <div ref={customerShell} className="app-shell" data-view={view} data-preview={connection.state==="preview"} data-cart-visible={count>0&&view==="menu"}>
   {view!=="admin"&&<><div className="demo-strip"><span><Leaf size={12}/> Một góc nhỏ, một bữa ngon</span><span>Gọi món tại bàn</span></div>
   <header className="site-header"><button className="brand-button" onClick={()=>navigate("menu")} aria-label="Về thực đơn"><Brand shop={shop}/></button><nav className="top-nav" aria-label="Điều hướng chính"><button className={view==="menu"?"active":""} onClick={()=>navigate("menu")}>Thực đơn</button><button className={view==="orders"?"active":""} onClick={()=>navigate("orders")}>Đơn của bạn {activeOrders>0&&<b>{activeOrders}</b>}</button><button className={view==="about"?"active":""} onClick={()=>navigate("about")}>Về {shop.name}</button></nav><div className="header-actions"><span className="table-pill"><QrCode size={17}/>{connection.state==="preview"?"Thực đơn":table?.name||"Đang kết nối"}</span><button className="call-top" onClick={()=>setHelpOpen(true)} disabled={!canOrder}><Bell size={18}/><span>Gọi nhân viên</span></button></div></header></>}
-  {loadError?<main className="connection-error"><AlertCircle size={38}/><h1>Chưa mở được thực đơn</h1><p>{loadError}</p><button className="primary" onClick={()=>window.location.reload()}><RefreshCw size={17}/>Thử lại</button></main>:view==="admin"?<AdminPanel initialDashboard={initialDashboard.current} staff={staff} access={access} onAccessChange={applyAccess} ready={ready} notify={notify} onMenuRefresh={loadMenu} shop={shop} onShopChange={applyShop} displaySettings={displaySettings} onDisplaySettings={applyDisplaySettings} themeSettings={themeSettings} onThemeSettings={applyThemeSettings}/>:<>
+  {loadError?<main className="connection-error"><AlertCircle size={38}/><h1>Chưa mở được thực đơn</h1><p>{loadError}</p><button className="primary" onClick={()=>window.location.reload()}><RefreshCw size={17}/>Thử lại</button></main>:view==="admin"?<Suspense fallback={<AdminStartup/>}><AdminPanel initialDashboard={initialDashboard.current} staff={staff} access={access} onAccessChange={applyAccess} ready={ready} notify={notify} onMenuRefresh={loadMenu} shop={shop} onShopChange={applyShop} displaySettings={displaySettings} onDisplaySettings={applyDisplaySettings} themeSettings={themeSettings} onThemeSettings={applyThemeSettings}/></Suspense>:<>
   <div className="store-ribbon"><span className={"status-dot "+(!shop.open?"off":"")}/><strong>{shop.open?"Đang nhận món":"Tạm ngừng nhận món"}</strong><span className="ribbon-divider"/><Clock size={13}/><span>{shop.hours}</span><span className="ribbon-right"><MapPin size={13}/>{connection.state==="preview"?"Mời bạn ghé "+shop.name:table?.zone||"Phục vụ tại bàn"}</span></div>
   {ready&&table&&<TableConnectionPanel connection={connection} table={table} onRequest={requestTable} onRefresh={loadMenu}/>}
   {pendingOrder&&!busy&&<section className="pending-order-banner" role="status"><div><strong>Cần kiểm tra lần gửi món trước</strong><p>Chưa nhận được xác nhận. Giữ nguyên các món để kiểm tra và tránh gọi lặp.</p></div><button className="secondary" onClick={()=>{setSelected(null);setCartOpen(false);setPendingOpen(true);}}><RefreshCw size={17}/>Kiểm tra đơn</button></section>}
@@ -362,147 +365,9 @@ function ItemModal({preview=false,item,initialLine,action,onClose,onAdd,onEdit,e
   {preview?<p className="direct-order-note">Bạn đang xem thực đơn. Quét mã QR tại bàn để gọi món.</p>:<div className="detail-bottom"><div className="stepper"><button aria-label="Giảm số lượng" disabled={locked||quantity<=1} onClick={()=>edit(()=>setQuantity(quantity-1))}><Minus size={16}/></button><strong>{quantity}</strong><button aria-label="Tăng số lượng" disabled={locked||quantity>=20} onClick={()=>edit(()=>setQuantity(quantity+1))}><Plus size={16}/></button></div><button className="primary detail-action" disabled={busy||!enabled||(!pending&&!item.available)} onClick={()=>onAdd({key:crypto.randomUUID(),itemId:item.id,quantity,extras,taste,note:note.trim()})}>{busy&&<LoaderCircle size={18} className="spin"/>}<span>{busy?"Đang gửi món…":pending?"Kiểm tra lại đơn":!item.available?"Tạm hết món":action==="direct"?"Xác nhận gọi món":"Thêm vào giỏ"}</span><strong>{money(pending?.expectedTotal??unit*quantity)}</strong></button></div>}
  </Modal>;
 }
-function OrderReceipt({order:o,onCancel,onSupport}:{order:Order;onCancel?:(order:Order)=>void;onSupport?:()=>void}){const progress=["new","preparing","ready","served"].indexOf(o.status);return <article className="receipt"><div className="receipt-header"><div><span className="eyebrow">{o.table_name}</span><h2>Đơn #{o.code}</h2><p>{time(o.created_at)} · {date(o.created_at)}{o.customer_name&&<> · {o.customer_name}</>}</p></div><span className={"status-badge "+o.status}>{statuses[o.status].label}</span></div>{o.status!=="cancelled"?<div className="order-progress">{["Đã gửi","Đang làm","Sẵn sàng","Đã phục vụ"].map((s,i)=><div key={s} className={i<=progress?"done":""}><span>{i<progress?<Check size={13}/>:i+1}</span><small>{s}</small></div>)}</div>:<p className="inline-error">Lý do hủy: {o.cancel_reason}</p>}<div className="receipt-items">{o.items.map((i,k)=><div key={k}><span className="receipt-qty">{i.quantity}×</span><div><strong>{i.name}</strong><small>{[...i.extras,i.taste,i.note].filter(Boolean).join(" · ")}</small></div><strong>{money(i.total)}</strong></div>)}</div>{o.note&&<p className="order-note"><Pencil size={14}/>{o.note}</p>}{!!o.paid&&<p className="receipt-payment-info"><CheckCircle2 size={14}/>{paymentLabels[o.payment_method||"unknown"]}{o.paid_at?<> · Thu lúc {time(o.paid_at)} ngày {date(o.paid_at)}</>:<> · Chưa ghi nhận thời điểm thu</>}</p>}<div className="receipt-total"><span className={o.paid?"paid":"muted"}>{o.status==="cancelled"?"Đơn đã hủy":o.paid?"Đã thanh toán tại quán":"Thanh toán với nhân viên"}</span><strong>{money(o.total)}</strong></div>{onCancel&&o.status!=="cancelled"&&<div className="customer-cancel-row">{o.status==="new"&&!o.paid?<><p>Bạn có thể hủy khi quán chưa nhận đơn.</p><button type="button" className="secondary" onClick={()=>onCancel(o)}><X size={18}/>Hủy đơn</button></>:<><p>Đơn đã được quán tiếp nhận hoặc thanh toán. Nếu cần hủy, vui lòng liên hệ nhân viên.</p>{onSupport&&<button type="button" className="secondary" onClick={onSupport}><BellRing size={18}/>Nhờ nhân viên hỗ trợ</button>}</>}</div>}</article>;}
+export function OrderReceipt({order:o,onCancel,onSupport}:{order:Order;onCancel?:(order:Order)=>void;onSupport?:()=>void}){const progress=["new","preparing","ready","served"].indexOf(o.status);return <article className="receipt"><div className="receipt-header"><div><span className="eyebrow">{o.table_name}</span><h2>Đơn #{o.code}</h2><p>{time(o.created_at)} · {date(o.created_at)}{o.customer_name&&<> · {o.customer_name}</>}</p></div><span className={"status-badge "+o.status}>{statuses[o.status].label}</span></div>{o.status!=="cancelled"?<div className="order-progress">{["Đã gửi","Đang làm","Sẵn sàng","Đã phục vụ"].map((s,i)=><div key={s} className={i<=progress?"done":""}><span>{i<progress?<Check size={13}/>:i+1}</span><small>{s}</small></div>)}</div>:<p className="inline-error">Lý do hủy: {o.cancel_reason}</p>}<div className="receipt-items">{o.items.map((i,k)=><div key={k}><span className="receipt-qty">{i.quantity}×</span><div><strong>{i.name}</strong><small>{[...i.extras,i.taste,i.note].filter(Boolean).join(" · ")}</small></div><strong>{money(i.total)}</strong></div>)}</div>{o.note&&<p className="order-note"><Pencil size={14}/>{o.note}</p>}{!!o.paid&&<p className="receipt-payment-info"><CheckCircle2 size={14}/>{paymentLabels[o.payment_method||"unknown"]}{o.paid_at?<> · Thu lúc {time(o.paid_at)} ngày {date(o.paid_at)}</>:<> · Chưa ghi nhận thời điểm thu</>}</p>}<div className="receipt-total"><span className={o.paid?"paid":"muted"}>{o.status==="cancelled"?"Đơn đã hủy":o.paid?"Đã thanh toán tại quán":"Thanh toán với nhân viên"}</span><strong>{money(o.total)}</strong></div>{onCancel&&o.status!=="cancelled"&&<div className="customer-cancel-row">{o.status==="new"&&!o.paid?<><p>Bạn có thể hủy khi quán chưa nhận đơn.</p><button type="button" className="secondary" onClick={()=>onCancel(o)}><X size={18}/>Hủy đơn</button></>:<><p>Đơn đã được quán tiếp nhận hoặc thanh toán. Nếu cần hủy, vui lòng liên hệ nhân viên.</p>{onSupport&&<button type="button" className="secondary" onClick={onSupport}><BellRing size={18}/>Nhờ nhân viên hỗ trợ</button>}</>}</div>}</article>;}
 
-function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,onMenuRefresh,shop,onShopChange,displaySettings,onDisplaySettings,themeSettings,onThemeSettings}:{initialDashboard:Promise<AdminData>|null;staff:boolean;access:StaffAccess|null;onAccessChange:(access:StaffAccess)=>void;ready:boolean;notify:(s:string)=>void;onMenuRefresh:()=>Promise<unknown>;shop:Shop;onShopChange:(shop:Shop)=>void;displaySettings:DisplaySettings;onDisplaySettings:(value:DisplaySettings)=>void;themeSettings:ThemeSettings;onThemeSettings:(value:ThemeSettings)=>void}){
- const bootstrapConsumed=useRef(false);
- const liveAccess=useRef(access);liveAccess.current=access;
- const can=(permission:Permission)=>hasPermission(access,permission);
- const canOrders=can("orders.view"),canRevenue=can("revenue.view"),canTables=can("tables.manage"),canMenu=can("menu.manage"),canSettings=can("settings.manage"),canPay=can("payments.collect"),canTransfer=can("tables.transfer"),canCancel=can("orders.cancel");
- const permissionKey=JSON.stringify([access?.userId,staff,access?.permissions]);
- const adminTabs=[{id:"stores",label:"Quản trị tổng",icon:Store,allowed:!!access?.isOwner},{id:"orders",label:"Bàn",icon:Table2,allowed:canOrders},{id:"order-list",label:"Đơn món",icon:UtensilsCrossed,allowed:canOrders},{id:"support",label:"Hỗ trợ",icon:Bell,allowed:canOrders},{id:"home",label:"Cài đặt",icon:Settings2,allowed:staff},{id:"revenue",label:"Doanh thu",icon:ChartNoAxesCombined,allowed:canRevenue},{id:"menu",label:"Thực đơn",icon:UtensilsCrossed,allowed:canMenu},{id:"promotions",label:"Khuyến mãi",icon:Settings2,allowed:canMenu},{id:"tables",label:"Quản lý bàn",icon:QrCode,allowed:canTables},{id:"settings",label:"Cài đặt quán",icon:Settings2,allowed:canSettings},{id:"accounts",label:"Tài khoản",icon:UsersRound,allowed:staff}].filter(item=>item.allowed);
- const [reportOrderScope,setReportOrderScope]=useState<"orders.view"|"revenue.view">("orders.view");
- const [tablePaymentSessionId,setTablePaymentSessionId]=useState<string|null>(null);
- const [transferSession,setTransferSession]=useState<AdminTableSession|null>(null);
- const [mutationError,setMutationError]=useState("");
- const workingRef=useRef(false);
- const [paymentMethod,setPaymentMethod]=useState<PaymentMethod|"">(""),[revenueRevision,setRevenueRevision]=useState(0),[reportOrder,setReportOrder]=useState<Order|null>(null);
- const [editPromotion,setEditPromotion]=useState<MenuItem|null>(null);
- const [keepAwake,setKeepAwake]=useState(false);
- const [audioSettings,setAudioSettings]=useState(false);
- const [deleteTable,setDeleteTable]=useState<DiningTable|null>(null);
- const [tabReady,setTabReady]=useState(false);
- const [tab,setTab]=useState("orders"),[data,setData]=useState<AdminData|null>(null),[error,setError]=useState(""),[working,setWorking]=useState(false),[editItem,setEditItem]=useState<Partial<MenuItem>|null>(null),[editTable,setEditTable]=useState<(DiningTable & {creationRequestId?:string})|null>(null),[cancelOrder,setCancelOrder]=useState<Order|null>(null),[reason,setReason]=useState(""),[confirmPaid,setConfirmPaid]=useState<Order|null>(null),[lastSync,setLastSync]=useState(0),[origin,setOrigin]=useState("");
- useEffect(()=>{setMutationError("");},[editItem,editTable,cancelOrder,confirmPaid]);
- useEffect(()=>{const target=new URLSearchParams(window.location.search).get("tab");if(target&&["stores","orders","order-list","support","home","revenue","menu","promotions","tables","settings","accounts"].includes(target))setTab(target);setTabReady(true);},[]);
- function switchAdminTab(next:string){if(!adminTabs.some(item=>item.id===next))return;setTab(next);const url=new URL(window.location.href);url.searchParams.set("tab",next);window.history.replaceState({},"",url);}
- function openPayment(order:Order){if(!canPay)return;setPaymentMethod("");setConfirmPaid(order);}
- const [focusTableId,setFocusTableId]=useState<string|null>(null),[focusRevision,setFocusRevision]=useState(0);
- const notifications=useAdminOrderAlerts(displaySettings.popupSeconds);
- const alertUserId=useRef(access?.userId??null);
- function openTable(tableId:string){if(!canOrders)return;setFocusTableId(tableId);setFocusRevision(n=>n+1);switchAdminTab("orders");}
- const polling=useRef(false),reloadEpoch=useRef(0);
- const reload=useCallback(async(force=false)=>{
-  if(!staff||(polling.current&&!force))return;
-  const epoch=++reloadEpoch.current;polling.current=true;
-  try{
-   const boot=!bootstrapConsumed.current&&initialDashboard;bootstrapConsumed.current=true;
-   const d=await (boot||api<AdminData>(["menu","promotions","settings"].includes(tab)?"admin":"admin?section=board"));
-   if(epoch!==reloadEpoch.current)return;
-   const current=liveAccess.current;
-   // A response started before a permission change must not restore old speech grants.
-   if(!current?.isStaff||d.access.userId!==current.userId||(d.access.account?.id===current.account?.id&&(d.access.account?.version??0)<(current.account?.version??0)))return;
-   const allowOrders=hasPermission(d.access,"orders.view"),allowOpenings=hasPermission(d.access,"tables.manage");
-   notifications.restrictAlerts(allowOrders,allowOpenings);
-   notifications.observeDashboard(allowOrders?d.orders:[],allowOpenings?d.sessions:[],allowOpenings?d.calls:[]);
-   onDisplaySettings(normalizeDisplaySettings(d.displaySettings));onThemeSettings(normalizeThemeSettings(d.themeSettings));setData(d);onShopChange(d.shop);onAccessChange(d.access);setLastSync(Date.now());setError("");
-  }catch(e){
-   if(epoch===reloadEpoch.current){
-    setError((e as Error).message);
-    if(e instanceof ApiError&&e.status===403){
-     setData(null);notifications.resetAlerts();
-     setReportOrder(null);setTransferSession(null);setTablePaymentSessionId(null);setConfirmPaid(null);setEditItem(null);setEditTable(null);setCancelOrder(null);
-     try{const current=await api<{access:StaffAccess}>("account");if(epoch===reloadEpoch.current)onAccessChange(current.access);}catch{/* Keep protected data cleared until access can be checked. */}
-    }
-   }
-  }
-  finally{if(epoch===reloadEpoch.current)polling.current=false;}
- },[staff,tab,initialDashboard,onShopChange,onDisplaySettings,onThemeSettings,onAccessChange,notifications.observeDashboard,notifications.restrictAlerts,notifications.resetAlerts]);
- useEffect(()=>{
-  setOrigin(window.location.origin);void reload();
-  const refresh=()=>{if(document.visibilityState==="visible")void reload();};
-  const interval=setInterval(refresh,operationalTabs.includes(tab)?3000:30000);document.addEventListener("visibilitychange",refresh);
-  return()=>{clearInterval(interval);document.removeEventListener("visibilitychange",refresh);reloadEpoch.current+=1;polling.current=false;};
- },[reload]);
- useEffect(()=>{
-  if(alertUserId.current!==(access?.userId??null)){notifications.resetAlerts();setData(null);alertUserId.current=access?.userId??null;}
-  notifications.restrictAlerts(canOrders,canTables);
-  if(!staff){setData(null);notifications.resetAlerts();}
-  if(!canOrders)setFocusTableId(null);
-  if(!canPay){setConfirmPaid(null);setTablePaymentSessionId(null);}
-  if(!canTransfer)setTransferSession(null);
-  if(!canMenu){setEditItem(null);setEditPromotion(null);}
-  if(!canTables){setEditTable(null);setDeleteTable(null);}
-  if(!canCancel)setCancelOrder(null);
-  if(!hasPermission(access,reportOrderScope))setReportOrder(null);
-  if(tabReady&&staff&&!adminTabs.some(item=>item.id===tab)&&adminTabs[0])switchAdminTab(adminTabs[0].id);
- },[permissionKey,reportOrderScope,tab,tabReady,notifications.restrictAlerts,notifications.resetAlerts]);
- async function mutate(path:string,body:unknown,message:string){
-  const payload=body as Record<string,unknown>;
-  const permission:Permission|undefined=path==="order"?(payload.action==="paid"?"payments.collect":payload.status==="cancelled"?"orders.cancel":"orders.manage"):({session:"tables.manage",table:"tables.manage",call:"tables.manage",item:"menu.manage",promotion:"menu.manage",shop:"settings.manage","display-settings":"settings.manage","theme-settings":"settings.manage"} as Record<string,Permission>)[path];
-  if(!permission||!can(permission)){const message="Bạn chưa được cấp quyền thực hiện chức năng này.";setMutationError(message);notify(message);return false;}
-  if(workingRef.current)return false;workingRef.current=true;setWorking(true);setMutationError("");
-  try{
-   const result=await api<{shop?:Shop;displaySettings?:DisplaySettings;themeSettings?:ThemeSettings}>("admin/"+path,{method:"PATCH",body:JSON.stringify(body)});
-   if(path==="display-settings"&&result.displaySettings){
-    const confirmed=normalizeDisplaySettings(result.displaySettings);
-    onDisplaySettings(confirmed);setData(current=>current?{...current,displaySettings:confirmed}:current);
-   }
-   if(path==="theme-settings"&&result.themeSettings){
-    const confirmed=normalizeThemeSettings(result.themeSettings);
-    onThemeSettings(confirmed);setData(current=>current?{...current,themeSettings:confirmed}:current);
-   }
-   if(path==="shop"&&result.shop){onShopChange(result.shop);setData(current=>current?{...current,shop:result.shop!}:current);window.dispatchEvent(new Event("store-branding-updated"));}setRevenueRevision(n=>n+1);await reload(true);void onMenuRefresh().catch(()=>{});notify(message);return true;
-  }catch(e){setMutationError((e as Error).message);notify((e as Error).message);if(e instanceof ApiError&&e.status===403)void reload(true);return false;}finally{workingRef.current=false;setWorking(false);}
- }
- async function sessionAction(id:string,action:"approve"|"reject"|"close"){return mutate("session",{id,action},action==="approve"?"Đã mở bàn. Máy của khách có thể gọi món.":action==="reject"?"Đã từ chối yêu cầu. Bàn sẵn sàng nhận khách mới.":"Đã đóng bàn. Quyết toán và lịch sử lượt khách đã được lưu trong mục Doanh thu.");}
- if(!ready)return <AdminStartup/>;
- if(!staff&&!access?.authenticated)return <SignInForm onAuthenticated={async()=>{const d=await api<{access:StaffAccess}>("account");onAccessChange(d.access);}}/>;
- if(!staff)return <main className="connection-error"><StoreSwitcher access={access}/><Store size={38}/><h1>{access?.authenticated?access.account?.status==="suspended"?"Tài khoản đã tạm khóa":"Tài khoản chưa được cấp quyền":"Khu vực dành cho nhân viên"}</h1><p>{access?.authenticated?<>{access.email}<br/>Liên hệ quản trị để được cấp hoặc mở lại quyền truy cập bằng đúng email này.</>:"Đăng nhập bằng tài khoản được quản trị cấp quyền để sử dụng các chức năng phục vụ quán."}</p>{access?.authenticated?<><button className="primary" onClick={()=>void onMenuRefresh().catch(error=>notify((error as Error).message))}><RefreshCw size={17}/>Kiểm tra lại quyền</button><button type="button" className="secondary" onClick={async()=>{try{await api("auth/logout",{method:"POST"});}catch{}window.location.href=withStore("/?view=admin&tab=accounts");}}><LogOut size={17}/>Đăng xuất để đổi tài khoản</button></>:<a className="primary" href={"/signin?returnTo="+encodeURIComponent(withStore("/?view=admin"))}><LogIn size={18}/>Đăng nhập quản trị</a>}</main>;
-
-
- return <AdminWorkspace shop={shop} access={access} tab={tab} onSwitch={switchAdminTab} onAudio={()=>setAudioSettings(true)} onListen={()=>{notifications.testSound();setKeepAwake(true);}} soundMode={notifications.soundMode} pushControl={<AdminPushToggle notify={notify} iconOnly/>} soundReady={notifications.soundReady} canOrders={canOrders} canTables={canTables} pendingCount={data?.sessions.filter(s=>s.status==="pending").length??0} supportCount={data?.calls.length??0}>
- {!operationalTabs.includes(tab)&&tab!=="home"&&<AdminBack title={adminTabs.find(t=>t.id===tab)?.label??"Cài đặt"} onBack={()=>switchAdminTab("home")}/>}
- {error&&<div className="inline-error"><AlertCircle size={18}/>{error}<button onClick={()=>void reload()}>Thử lại</button></div>}{!data?<div className="admin-loading"><LoaderCircle className="spin"/>Đang tải dữ liệu…</div>:<>
- {canTables&&tab==="tables"&&<OpeningRequests sessions={data.sessions} tables={data.tables} working={working} onAction={sessionAction}/>}
- {tab==="stores"&&access?.isOwner&&<StoreManagement/>}
- {tab==="home"&&<AdminSettingsHome tabs={[...adminTabs].sort((a,b)=>["tables","menu","settings","promotions","revenue","accounts","stores"].indexOf(a.id)-["tables","menu","settings","promotions","revenue","accounts","stores"].indexOf(b.id))} onSwitch={switchAdminTab} collected={data.stats.todayCollected} orderCount={data.stats.todayCount} activeTables={data.sessions.filter(s=>s.status==="active").length} updated={lastSync?time(lastSync):"…"}/>}
- {operationalTabs.includes(tab)&&canOrders&&<>
-  <OpenTableBoard key={tab} mode={tab==="support"?"support":tab==="order-list"?"orders":"tables"} initialView={tab==="orders"?"matrix":"manage"} permissions={access?.permissions??[]} tables={data.tables} sessions={data.sessions} orders={data.orders} calls={data.calls} transfers={data.transfers??[]} working={working} focusTableId={focusTableId} focusRevision={focusRevision} onSessionAction={sessionAction} onOrderStatus={(order,next)=>mutate("order",{id:order.id,status:next},"Đã cập nhật trạng thái đơn.")} onResolveCall={call=>mutate("call",{id:call.id,createdAt:call.created_at},"Đã xác nhận hỗ trợ bàn.")} onTransfer={setTransferSession} onCollect={openPayment} onCollectTable={setTablePaymentSessionId} onCancel={order=>{setCancelOrder(order);setReason("");}} onViewOrder={order=>{setReportOrderScope("orders.view");setReportOrder(order);}}/>
- </>}
-
- {tab==="revenue"&&canRevenue&&<RevenuePanel canCollect={canPay} tables={data.tables} refreshKey={revenueRevision} onCollect={openPayment} onViewOrder={order=>{setReportOrderScope("revenue.view");setReportOrder(order);}} notify={notify}/>}
- {["menu","promotions","settings"].includes(tab)&&data.compact&&<p role="status">Đang tải thiết lập cửa hàng…</p>}
- {tab==="menu"&&canMenu&&!data.compact&&<><div className="section-heading menu-management-heading"><div><h2>Thực đơn của quán</h2><p>{data.items.length} món · Thay đổi được áp dụng cho lần gọi món tiếp theo.</p></div><button className="primary" onClick={()=>setEditItem({name:"",description:"",category:"main",price:50000,image:"/images/hero.webp",badge:"",available:1})}><Plus size={17}/>Thêm món</button></div><div className="manage-menu-list">{data.items.map(m=><div key={m.id} className="manage-menu-row"><FoodImage src={m.image} alt={m.name}/><div className="manage-menu-name"><strong>{m.name}</strong><span>{categories.find(c=>c.id===m.category)?.name}</span></div><div className="manage-price"><DishPrice item={m}/>{m.promotion&&<small className="promotion-state">{!m.promotion.enabled?"Khuyến mại đã tắt":m.promotion.endsAt!==null&&Date.now()>=m.promotion.endsAt?"Khuyến mại đã kết thúc":m.promotion.startsAt!==null&&Date.now()<m.promotion.startsAt?"Khuyến mại đã hẹn giờ":"Khuyến mại đang áp dụng"}</small>}</div><button className={"availability "+(m.available?"available":"")} disabled={working} onClick={()=>void mutate("item",{id:m.id,toggle:m.available?0:1},m.available?"Đã đánh dấu tạm hết món.":"Món đã sẵn sàng phục vụ.")}><span/>{m.available?"Đang bán":"Tạm hết"}</button><button className="icon-btn bordered" aria-label={"Chỉnh sửa "+m.name} onClick={()=>setEditItem(m)}><Pencil size={16}/></button></div>)}</div></>}
- {tab==="promotions"&&canMenu&&!data.compact&&<section><div className="section-heading"><div><h2>Cài đặt khuyến mại</h2><p>Chọn món để cài mức giảm và thời gian áp dụng. Đơn đã đặt giữ nguyên giá.</p></div></div><div className="manage-menu-list">{data.items.map(m=><div className="manage-menu-row" key={m.id}><FoodImage src={m.image} alt={m.name}/><div className="manage-menu-name"><strong>{m.name}</strong><span>{!m.promotion?.enabled?"Chưa bật khuyến mại":m.promotion.endsAt!==null&&Date.now()>=m.promotion.endsAt?"Đã kết thúc":m.promotion.startsAt!==null&&Date.now()<m.promotion.startsAt?"Đã hẹn giờ":"Đang áp dụng"}</span></div><div className="manage-price"><DishPrice item={m}/></div><button className="secondary" onClick={()=>{setMutationError("");setEditPromotion(m);}}>Cài khuyến mại</button></div>)}</div>{!data.items.length&&<p>Thêm món trong Thực đơn trước khi cài khuyến mại.</p>}</section>}
- {tab==="tables"&&canTables&&<TableManagement tables={data.tables} sessions={data.sessions} orders={data.orders} shopName={shop.name} origin={origin} working={working} onAction={sessionAction} onEditTable={setEditTable} onAddTable={()=>setEditTable({id:"",token:"",name:"Bàn "+String(Math.max(0,...data.tables.map(t=>Number(t.id)||0))+1).padStart(2,"0"),zone:"Sảnh chính",creationRequestId:crypto.randomUUID()})} onViewOrders={openTable} onDeleteTable={table=>{setMutationError("");setDeleteTable(table);}}/>}
- {tab==="settings"&&canSettings&&!data.compact&&<><ThemeSettingsPanel shopName={shop.name} value={normalizeThemeSettings(data.themeSettings??themeSettings)} working={working} onSave={value=>mutate("theme-settings",value,"Đã lưu màu giao diện và màu chữ cho quán.")}/><DisplaySettingsPanel value={normalizeDisplaySettings(data.displaySettings)} working={working} previewItem={data.items.find(item=>!!item.available)||data.items[0]} onSave={value=>mutate("display-settings",value,"Đã lưu thời gian thông báo, cỡ chữ và kích thước ảnh món.")}/><ShopForm key={brandingRevision(data.shop)+data.shop.open} shop={data.shop} working={working} onSave={s=>mutate("shop",s,"Đã cập nhật thông tin quán.")}/></>}
- {tab==="accounts"&&access&&<StaffAccountsPanel access={access} onAccessRefresh={async()=>{await reload(true);await onMenuRefresh();}}/>}
- </>}
- {audioSettings&&<Modal title="Thông báo & màn hình" onClose={()=>setAudioSettings(false)}><div className="form-body"><h3>Âm thanh thông báo</h3><div className="aw-sound-modes" role="group" aria-label="Chế độ âm thanh">{([{id:"voice",label:"Giọng nói"},{id:"chime",label:"Âm báo"},{id:"silent",label:"Im lặng"}] as const).map(mode=><button type="button" data-audio-test="true" key={mode.id} aria-pressed={notifications.soundMode===mode.id} className="secondary" onClick={()=>{notifications.setSoundMode(mode.id);if(mode.id!=="silent")notifications.testSound();}}>{mode.label}</button>)}</div><p role="status">{notifications.soundMode==="silent"?"Đã tắt âm thanh. Thông báo trên màn hình và push vẫn hoạt động.":notifications.soundMode==="chime"?"Chỉ phát âm báo, không đọc giọng nói.":notifications.audioNotice||"Giọng đọc đã sẵn sàng."}</p>{notifications.soundMode!=="silent"&&<button type="button" data-audio-test="true" className="primary" onClick={()=>{notifications.testSound();setKeepAwake(true);}}><Volume2 size={18}/>{notifications.soundMode==="chime"?"Nghe thử âm báo":"Nghe thử giọng đọc"}</button>}<AdminScreenAwake enabled={keepAwake} onChange={setKeepAwake}/><button type="button" className="secondary" onClick={()=>void reload()}><RefreshCw size={18}/>Tải lại dữ liệu</button><StoreSwitcher access={access}/><a className="secondary" href={withStore("/")}>Xem thực đơn khách</a></div></Modal>}
- {canOrders&&<NewOrderPopup alert={notifications.active} waiting={notifications.waiting} durationMs={notifications.durationMs} onDismiss={notifications.dismiss} onOpenTable={openTable}/>}
- {reportOrder&&can(reportOrderScope)&&<Modal title={"Chi tiết đơn #"+reportOrder.code} onClose={()=>setReportOrder(null)}><div className="report-order-detail"><OrderReceipt order={reportOrder}/></div></Modal>}
- {canTransfer&&transferSession&&data&&<TableTransferDialog session={transferSession} tables={data.tables} sessions={data.sessions} orders={data.orders} calls={data.calls} onClose={()=>setTransferSession(null)} onRefresh={async()=>{await reload(true);}} onTransferred={result=>{setTransferSession(null);setRevenueRevision(n=>n+1);setFocusTableId(result.session.table_id);setFocusRevision(n=>n+1);void reload(true);void onMenuRefresh().catch(()=>{});notify(result.replayed?"Đã đồng bộ vị trí hiện tại của lượt khách: "+result.session.table_name+".":"Đã chuyển "+result.transfer.fromTableName+" sang "+result.transfer.toTableName+". Toàn bộ thông tin lượt khách đã chuyển cùng bàn.");}}/>}
- {canPay&&tablePaymentSessionId&&<TablePaymentDialog sessionId={tablePaymentSessionId} onClose={()=>setTablePaymentSessionId(null)} onPaid={result=>{setTablePaymentSessionId(null);setRevenueRevision(n=>n+1);void reload(true);void onMenuRefresh().catch(()=>{});notify("Đã ghi nhận "+money(result.receipt.amount)+" cho "+result.receipt.orderIds.length+" lần gọi món của bàn.");}}/>}
- {canMenu&&editPromotion&&<Modal title={"Khuyến mại · "+editPromotion.name} onClose={()=>!working&&setEditPromotion(null)}><form className="form-body" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);const promotion=readPromotionForm(f,editPromotion.promotion);void mutate("promotion",{id:editPromotion.id,promotion},"Đã lưu khuyến mại.").then(ok=>{if(ok)setEditPromotion(null);});}}><p>Giá gốc: {money(editPromotion.price)}</p><PromotionFields initial={editPromotion.promotion}/>{mutationError&&<p className="submission-error" role="alert">{mutationError}</p>}<button className="primary full" disabled={working}>Lưu khuyến mại</button></form></Modal>}
- {canMenu&&editItem&&<Modal title={editItem.id?"Chỉnh sửa món":"Thêm món mới"} onClose={()=>!working&&setEditItem(null)}><ItemForm initial={editItem} working={working} error={mutationError} onSave={async m=>{if(await mutate("item",m,"Đã lưu món vào thực đơn."))setEditItem(null);}}/></Modal>}
- {canTables&&deleteTable&&<Modal title={"Xóa "+deleteTable.name+"?"} onClose={()=>!working&&setDeleteTable(null)}><div className="form-body"><p>Chỉ xóa bàn chưa có lượt phục vụ hoặc lịch sử liên quan. Mã QR của bàn sẽ ngừng sử dụng sau khi xóa.</p>{mutationError&&<p className="submission-error" role="alert">{mutationError}</p>}<button type="button" className="danger-button" disabled={working} onClick={async()=>{if(await mutate("table",{id:deleteTable.id,action:"delete"},"Đã xóa bàn."))setDeleteTable(null);}}>{working?"Đang xóa…":"Xác nhận xóa bàn"}</button><button type="button" className="secondary" disabled={working} onClick={()=>setDeleteTable(null)}>Giữ lại bàn</button></div></Modal>}
- {canTables&&editTable&&<Modal title={editTable.creationRequestId?"Thêm bàn mới":"Thông tin bàn"} onClose={()=>!working&&setEditTable(null)}><form className="form-body" onSubmit={async e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(await mutate("table",{id:editTable.id,name:f.get("name"),zone:f.get("zone"),...(editTable.creationRequestId?{create:true,requestId:editTable.creationRequestId}:{})},editTable.creationRequestId?"Đã thêm bàn mới và tạo mã QR riêng.":"Đã cập nhật bàn."))setEditTable(null);}}><label className="field"><span>Tên bàn</span><input name="name" defaultValue={editTable.name} required maxLength={30}/></label><label className="field"><span>Khu vực</span><input name="zone" defaultValue={editTable.zone} required maxLength={40}/></label>{mutationError&&<p className="submission-error" role="alert">{mutationError}</p>}<p className="table-form-note">{editTable.creationRequestId?"Bàn mới sẽ ở trạng thái trống và có mã QR riêng để tải hoặc in.":"Mã QR hiện tại tiếp tục sử dụng sau khi đổi tên bàn."}</p><button className="primary full" disabled={working}>{working?"Đang lưu…":editTable.creationRequestId?"Thêm bàn & tạo mã QR":"Lưu thông tin"}</button></form></Modal>}
- {canCancel&&cancelOrder&&<Modal title={"Hủy đơn #"+cancelOrder.code} onClose={()=>!working&&setCancelOrder(null)}><form className="form-body" onSubmit={async e=>{e.preventDefault();if(await mutate("order",{id:cancelOrder.id,status:"cancelled",reason},"Đã hủy đơn và thông báo trạng thái cho khách."))setCancelOrder(null);}}><p>{cancelOrder.table_name} · {money(cancelOrder.total)}</p><label className="field"><span>Lý do hủy (khách sẽ nhìn thấy)</span><textarea required rows={3} maxLength={180} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Ví dụ: Khách yêu cầu hủy món…"/></label>{mutationError&&<p className="submission-error" role="alert">{mutationError}</p>}<button className="danger-button full" disabled={working||!reason.trim()}>Xác nhận hủy đơn</button></form></Modal>}
- {canPay&&confirmPaid&&<Modal title="Thanh toán lần gọi món" onClose={()=>!working&&setConfirmPaid(null)}><div className="form-body"><p>Đơn <strong>#{confirmPaid.code}</strong> · {confirmPaid.table_name}{confirmPaid.customer_name&&<> · {confirmPaid.customer_name}</>}</p><h2>{money(confirmPaid.total)}</h2><p>Chọn phương thức khách đã thanh toán. Chỉ xác nhận khi quán đã nhận đủ tiền.</p><fieldset className="payment-method-picker"><legend>Phương thức thanh toán</legend>{([{id:"cash",label:"Tiền mặt",icon:Banknote},{id:"bank",label:"Chuyển khoản",icon:Landmark},{id:"other",label:"Khác",icon:WalletCards}] as const).map(method=><label key={method.id} className={"payment-method-option "+(paymentMethod===method.id?"selected":"")}><input type="radio" name="paymentMethod" value={method.id} checked={paymentMethod===method.id} disabled={working} onChange={()=>setPaymentMethod(method.id)}/><method.icon size={20}/><span>{method.label}</span></label>)}</fieldset><p className="payment-timestamp-note"><Clock size={14}/>Thời điểm thu tiền được ghi nhận khi xác nhận.</p>{mutationError&&<p className="submission-error" role="alert">{mutationError}</p>}<button className="primary full" disabled={working||!paymentMethod} onClick={async()=>{if(await mutate("order",{id:confirmPaid.id,action:"paid",paymentMethod},"Đã ghi nhận tiền thu và phương thức thanh toán."))setConfirmPaid(null);}}>{working?<LoaderCircle className="spin" size={18}/>:<Check size={18}/>}Quán đã nhận đủ tiền</button></div></Modal>}
- </AdminWorkspace>;
-}
-function ItemForm({initial,working,error="",onSave}:{initial:Partial<MenuItem>;working:boolean;error?:string;onSave:(m:Partial<MenuItem>)=>Promise<void>}){const [image,setImage]=useState(initial.image||"/images/hero.webp"),[imageBusy,setImageBusy]=useState(false),[itemExtras,setItemExtras]=useState(()=>initial.id?extrasFor(initial as MenuItem):[]);return <form className="form-body" onSubmit={e=>{e.preventDefault();if(imageBusy||working)return;const f=new FormData(e.currentTarget);void onSave({...initial,name:String(f.get("name")),description:String(f.get("description")),category:f.get("category") as Category,price:Number(f.get("price")),promotion:undefined,extras:itemExtras,image,badge:String(f.get("badge")),available:f.get("available")==="on"?1:0});}}><label className="field"><span>Tên món</span><input name="name" defaultValue={initial.name} required maxLength={80}/></label><div className="form-two"><label className="field"><span>Nhóm món</span><select name="category" defaultValue={initial.category}>{categories.filter(c=>c.id!=="all").map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label className="field"><span>Giá bán (VNĐ)</span><input name="price" type="number" step={1000} min={1000} max={2000000} required defaultValue={initial.price}/></label></div><label className="field"><span>Mô tả ngắn</span><textarea name="description" rows={3} maxLength={240} defaultValue={initial.description}/></label><ItemExtrasEditor value={itemExtras} onChange={setItemExtras} disabled={working}/><DishImageField value={image} disabled={working||imageBusy} onChange={setImage} onBusy={setImageBusy}/><label className="field"><span>Nhãn gợi ý</span><input name="badge" maxLength={32} defaultValue={initial.badge} placeholder="Ví dụ: Món mới"/></label><label className="option-row"><input name="available" type="checkbox" defaultChecked={!!initial.available}/><span>Sẵn sàng phục vụ</span></label>{error&&<p className="submission-error" role="alert">{error}</p>}<button className="primary full" disabled={working||imageBusy}>{working?<LoaderCircle className="spin" size={16}/>:<Check size={17}/>}Lưu món</button></form>;}
-function ShopForm({shop,working,onSave}:{shop:Shop;working:boolean;onSave:(s:Shop)=>Promise<boolean>}){const [logo,setLogo]=useState(shop.logo??""),[logoBusy,setLogoBusy]=useState(false);return <div className="settings-layout"><form className="settings-form" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(logoBusy||working)return;void onSave({logo,name:String(f.get("name")),tagline:String(f.get("tagline")),hours:String(f.get("hours")),address:String(f.get("address")),open:f.get("open")==="on"});}}><h2>Thông tin cửa hàng</h2><ShopLogoField value={logo} name={shop.name} disabled={working} onChange={setLogo} onBusy={setLogoBusy}/><p>Cá nhân hóa thực đơn bằng tên và thông tin của quán.</p><label className="field"><span>Tên cửa hàng</span><input name="name" required maxLength={40} defaultValue={shop.name}/></label><label className="field"><span>Dòng giới thiệu dưới tên</span><input name="tagline" maxLength={60} defaultValue={shop.tagline}/></label><label className="field"><span>Giờ phục vụ</span><input name="hours" maxLength={50} defaultValue={shop.hours}/></label><label className="field"><span>Địa chỉ hoặc lời giới thiệu ngắn</span><textarea name="address" maxLength={140} rows={3} defaultValue={shop.address}/></label><label className="shop-open"><input type="checkbox" name="open" defaultChecked={shop.open}/><span><strong>Đang nhận món</strong><small>Tắt khi quán nghỉ hoặc bếp cần tạm dừng.</small></span></label><button className="primary" disabled={working||logoBusy}><Check size={17}/>Lưu thay đổi</button></form><aside className="settings-guide"><Leaf size={32}/><h2>Sẵn sàng đón khách<br/>trong vài bước.</h2><ol><li>Cập nhật tên cửa hàng.</li><li>Thêm món, giá và ảnh thật.</li><li>Đặt tên bàn và tải mã QR.</li><li>Quét QR, nhập tên và duyệt mở bàn.</li><li>Thử gọi món, thanh toán và đóng bàn.</li></ol><p>Quản lý đơn bằng tài khoản đã được cấp quyền. Thanh toán hiện được xác nhận thủ công tại quán.</p></aside></div>;}
-
-function DishPrice({item}:{item:MenuItem}){
+export function DishPrice({item}:{item:MenuItem}){
  const price=salePrice(item),discount=price<item.price;
  return <span className="dish-price">{discount&&<del aria-label="Giá gốc">{money(item.price)}</del>}<strong>{money(price)}</strong>{discount&&<span className="promotion-label">Giảm {item.promotion?.type==="percent"?item.promotion.value+"%":money(item.price-price)}</span>}</span>;
 }
-function promotionDate(value:number|null|undefined){return value?new Date(value+7*3600000).toISOString().slice(0,16):"";}
-function PromotionFields({initial}:{initial?:Promotion|null}){
- const [enabled,setEnabled]=useState(!!initial?.enabled),[type,setType]=useState<Promotion["type"]>(initial?.type??"percent");
- return <fieldset className="promotion-fields"><legend>Khuyến mại món</legend><label className="option-row"><input name="promotionEnabled" type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/><span>Bật giảm giá cho món này</span></label><p>Giảm trên giá món, không giảm phụ thu. Đơn đã đặt giữ nguyên giá.</p>{enabled&&<><div className="form-two"><label className="field"><span>Hình thức giảm</span><select name="promotionType" value={type} onChange={e=>setType(e.target.value as Promotion["type"])}><option value="percent">Theo phần trăm (%)</option><option value="amount">Theo số tiền (₫)</option></select></label><label className="field"><span>{type==="percent"?"Mức giảm (%)":"Số tiền giảm (₫)"}</span><input key={type} name="promotionValue" type="number" min={1} max={type==="percent"?99:1999000} step={1} required defaultValue={initial?.type===type?initial.value:type==="percent"?10:5000}/></label></div><div className="form-two"><label className="field"><span>Bắt đầu (giờ Việt Nam)</span><input name="promotionStart" type="datetime-local" defaultValue={promotionDate(initial?.startsAt)}/></label><label className="field"><span>Kết thúc (giờ Việt Nam)</span><input name="promotionEnd" type="datetime-local" defaultValue={promotionDate(initial?.endsAt)}/></label></div><small>Để trống ngày bắt đầu để áp dụng ngay; để trống ngày kết thúc để chạy đến khi tắt. Giá sau giảm tối thiểu 1.000 ₫.</small></>}</fieldset>;
-}
-
-function readPromotionForm(f:FormData,initial:Promotion|null|undefined):Promotion|null{return f.get("promotionEnabled")==="on"?{enabled:true,type:f.get("promotionType") as Promotion["type"],value:Number(f.get("promotionValue")),startsAt:f.get("promotionStart")?Date.parse(String(f.get("promotionStart"))+":00+07:00"):null,endsAt:f.get("promotionEnd")?Date.parse(String(f.get("promotionEnd"))+":00+07:00"):null}:initial?{...initial,enabled:false}:null;}

@@ -1,4 +1,4 @@
-import {conditionalJson} from "@/lib/conditional-json";
+import {conditionalJson, conditionalJsonWithEtag} from "@/lib/conditional-json";
 import {inStore, currentStoreId} from "@/lib/store-database";
 import {resolveStore,listStores,createStore,updateStoreStatus,saveStoreBranding} from "@/lib/store-platform";
 import {database,seed,deviceIdentity,getTable,getMenu,getShop,publicOrder,json,readBody} from "@/lib/server";
@@ -10,11 +10,12 @@ import {transferTable} from "@/lib/table-transfer-server";
 import {getDisplaySettings,saveDisplaySettings} from "@/lib/display-settings-server";
 import {getThemeSettings,saveThemeSettings} from "@/lib/theme-settings-server";
 import {readQrEntry} from "@/lib/qr-entry";
-import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories,brandingRevision,publicShop} from "@/lib/menu";
-import type {OrderStatus} from "@/lib/menu";
+import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories,brandingRevision,publicShop,normalizeOrderItem,projectOrderStatus,canCancelOrder} from "@/lib/menu";
+import type {OrderStatus,OrderItem} from "@/lib/menu";
 import {getStaffAccess,updateOwnProfile,listStaffAccounts,createStaffAccount,updateStaffAccount} from "@/lib/staff-access";
 import {hasPermission,type Permission} from "@/lib/staff-permissions";
-import {adminDashboard} from "@/lib/admin-dashboard";
+import {adminDashboard, getBoardRevision} from "@/lib/admin-dashboard";
+import {handleRealtimeUpgrade, notifyRealtimeInvalidation} from "@/lib/realtime-do";
 import {getVapidConfig, subscribeStaffDevice, unsubscribeStaffDevice, getStaffSubscriptionStatus, dispatchStaffPush, sendTestPush} from "@/lib/staff-push";
 import {
   ensurePlatformSchema,
@@ -52,6 +53,7 @@ async function handleScoped(request:Request){
    if(path==="shop-info"){const [shop,themeSettings]=await Promise.all([getShop(),getThemeSettings()]);return json({shop:{...shop,logo:shop.logo?"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(shop):""},themeSettings});}
    if(path==="branding-icon"){const shop=await getShop();if(url.searchParams.has("v")&&url.searchParams.get("v")!==brandingRevision(shop))return json({error:"Ảnh thương hiệu đã thay đổi. Vui lòng tải lại trang."},404);const headers={"Cache-Control":url.searchParams.get("v")===brandingRevision(shop)?"public, max-age=31536000, immutable":"no-store","X-Content-Type-Options":"nosniff"};if(shop.logo){const binary=atob(shop.logo.split(",")[1]);return new Response(Uint8Array.from(binary,c=>c.charCodeAt(0)),{headers:{"Content-Type":"image/png",...headers}});}return new Response(shopIconSvg(shop.name),{headers:{"Content-Type":"image/svg+xml",...headers}});}
    if(path==="account")return json({access});
+   if(path==="realtime/ws")return handleRealtimeUpgrade(request,currentStoreId(),access);
    if(path==="stores")return json(await listStores(request));
    if(path==="admin/push/config")return json({enabled: getVapidConfig().enabled, vapidPublicKey: getVapidConfig().publicKey || null});
    if(path==="admin/push/status"){
@@ -68,8 +70,20 @@ async function handleScoped(request:Request){
    if(path==="admin/revenue/settlements"){allow("revenue.view");return json(await listSettlements(url.searchParams));}
    if(path.startsWith("admin/revenue/settlements/")&&!path.slice("admin/revenue/settlements/".length).includes("/")){allow("revenue.view");return json(await getSettlement(path.slice("admin/revenue/settlements/".length)));}
    if(path==="admin"){
-    const compact=url.searchParams.get("section")==="board",data=await adminDashboard(access!,!compact);
-    return conditionalJson(request,{...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop});
+    const compact=url.searchParams.get("section")==="board";
+    if(compact&&request.headers.has("If-None-Match")){
+     const revision=await getBoardRevision(access!,currentStoreId());
+     if(request.headers.get("If-None-Match")===revision){
+      return new Response(null,{status:304,headers:{"ETag":revision,"Cache-Control":"no-store","Vary":"Cookie","X-Content-Type-Options":"nosniff"}});
+     }
+    }
+    const data=await adminDashboard(access!,!compact);
+    const payload={...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop};
+    if(compact){
+     const revision=await getBoardRevision(access!,currentStoreId());
+     return conditionalJsonWithEtag(request,payload,revision);
+    }
+    return conditionalJson(request,payload);
    }
    return json({error:"Không tìm thấy nội dung."},404);
   }
@@ -134,6 +148,7 @@ async function handleScoped(request:Request){
   if(request.method==="POST"&&path==="table-session"){
    const table=await getTable(checkedText(b.tableToken,80,true)),result=await requestTableSession(request,table,b.customerName);
    if(result.created){
+    notifyRealtimeInvalidation(currentStoreId(),"board");
     dispatchStaffPush({
       storeId: currentStoreId(),
       requiredPermission: "tables.manage",
@@ -157,6 +172,7 @@ async function handleScoped(request:Request){
    const latest=await owned();
    if(changed.meta.changes===0&&latest?.status!=="cancelled")throw new OrderError("Đơn hoặc lượt bàn vừa thay đổi. Vui lòng tải lại; nếu quán đã nhận đơn, hãy liên hệ nhân viên.",409);
    if(!latest)throw new OrderError("Không tìm thấy đơn.",404);
+   if(changed.meta.changes>0)notifyRealtimeInvalidation(currentStoreId(),"orders");
    return json({order:publicOrder(latest),replayed:changed.meta.changes===0});
   }
   if(request.method==="POST"&&path==="orders"){
@@ -178,6 +194,7 @@ async function handleScoped(request:Request){
    if(!saved)throw new OrderError("Lượt phục vụ đã kết thúc hoặc kết nối bàn vừa thay đổi. Vui lòng tải lại trang.",403);
    if(!await matchesOrderHash(saved.request_hash,hash,session.id,b))throw new OrderError("Nội dung đơn đã thay đổi. Vui lòng thử lại.",409);
    if(orderInsert.meta.changes===1){
+    notifyRealtimeInvalidation(currentStoreId(),"orders");
     dispatchStaffPush({
       storeId: currentStoreId(),
       requiredPermission: "orders.view",
@@ -197,6 +214,7 @@ async function handleScoped(request:Request){
    // A duplicate live call is successful, but a close that won the race must reject this action.
    if(called.meta.changes===0)await requireActiveSession(request,table,session.id);
    else{
+    notifyRealtimeInvalidation(currentStoreId(),"board");
     const currentReq=await db.prepare("SELECT created_at FROM service_requests WHERE id = ?").bind(id).first<{created_at:number}>();
     const gen=currentReq?.created_at??Date.now();
     dispatchStaffPush({
@@ -211,9 +229,9 @@ async function handleScoped(request:Request){
    }
    return json({ok:true});
   }
-  if(request.method==="PATCH"&&path==="admin/session"){allow("tables.manage");const result=await updateTableSession(b.id,b.action);return json({ok:true,...result});}
-  if(request.method==="PATCH"&&path==="admin/table-payment"){allow("payments.collect");return json(await payTableBalance(b));}
-  if(request.method==="PATCH"&&path==="admin/table-transfer"){allow("tables.transfer");return json(await transferTable(b));}
+  if(request.method==="PATCH"&&path==="admin/session"){allow("tables.manage");const result=await updateTableSession(b.id,b.action);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,...result});}
+  if(request.method==="PATCH"&&path==="admin/table-payment"){allow("payments.collect");const res=await payTableBalance(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
+  if(request.method==="PATCH"&&path==="admin/table-transfer"){allow("tables.transfer");const res=await transferTable(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
   if(request.method==="PATCH"&&path==="admin/display-settings"){allow("settings.manage");return json(await saveDisplaySettings(b));}
   if(request.method==="PATCH"&&path==="admin/theme-settings"){allow("settings.manage");return json(await saveThemeSettings(b));}
   if(request.method==="PATCH"&&path==="admin/order"){
@@ -231,26 +249,79 @@ async function handleScoped(request:Request){
       if(latest?.paid!==1||latest.status==="cancelled")throw new OrderError("Đơn vừa bị hủy. Chưa ghi nhận thanh toán.",409);
      }
     }
+   }else if(b.action==="line_transition"||b.orderLineId){
+    if(old.status==="cancelled")throw new OrderError("Đơn đã hủy không thể cập nhật món.",409);
+    const lineId=checkedText(b.orderLineId,60,true);
+    const toStatus=b.toStatus as OrderStatus;
+    if(!["preparing","ready","served"].includes(toStatus))throw new OrderError("Trạng thái món không hợp lệ.");
+    const rawItems=JSON.parse(old.items as string) as OrderItem[];
+    let found=false;
+    const updatedItems=rawItems.map((item,idx)=>{
+     const norm=normalizeOrderItem(item,old.status as OrderStatus,idx);
+     if(norm.orderLineId!==lineId&&norm.itemId!==b.itemId)return norm;
+     found=true;
+     let avail=0;
+     if(toStatus==="preparing")avail=norm.newCount;
+     else if(toStatus==="ready")avail=norm.preparingCount>0?norm.preparingCount:norm.newCount;
+     else if(toStatus==="served")avail=norm.readyCount>0?norm.readyCount:norm.preparingCount>0?norm.preparingCount:norm.newCount;
+     const count=typeof b.count==="number"&&b.count>0?Math.min(b.count,avail):avail;
+     if(count<=0)throw new OrderError("Món đã được cập nhật trạng thái khác. Vui lòng tải lại trang.",409);
+     if(toStatus==="preparing"){
+      return {...norm,newCount:norm.newCount-count,preparingCount:norm.preparingCount+count};
+     }
+     if(toStatus==="ready"){
+      const fromPrep=Math.min(count,norm.preparingCount);
+      const fromNew=count-fromPrep;
+      return {...norm,newCount:norm.newCount-fromNew,preparingCount:norm.preparingCount-fromPrep,readyCount:norm.readyCount+count};
+     }
+     if(toStatus==="served"){
+      const fromReady=Math.min(count,norm.readyCount);
+      const rem=count-fromReady;
+      const fromPrep=Math.min(rem,norm.preparingCount);
+      const fromNew=rem-fromPrep;
+      return {...norm,newCount:norm.newCount-fromNew,preparingCount:norm.preparingCount-fromPrep,readyCount:norm.readyCount-fromReady,servedCount:norm.servedCount+count};
+     }
+     return norm;
+    });
+    if(!found)throw new OrderError("Không tìm thấy món cần cập nhật.",404);
+    const nextStatus=projectOrderStatus(updatedItems,old.status as OrderStatus);
+    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, updated_at = ? WHERE id = ? AND updated_at = ?").bind(JSON.stringify(updatedItems),nextStatus,Date.now(),id,old.updated_at).run();
+    if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
    }else{
     if(old.paid&&b.status==="cancelled")throw new OrderError("Đơn đã thanh toán. Vui lòng xử lý hoàn tiền trực tiếp tại quầy.",409);
+    if(b.status==="cancelled"&&!canCancelOrder(publicOrder(old)))throw new OrderError("Đơn đã có món được phục vụ hoặc đã thanh toán. Không thể hủy.",409);
     if(!canTransition(old.status as OrderStatus,b.status))throw new OrderError("Trạng thái đơn đã thay đổi. Vui lòng tải lại.",409);
+    const rawItems=JSON.parse(old.items as string) as OrderItem[];
+    const updatedItems=rawItems.map((item,idx)=>{
+     const norm=normalizeOrderItem(item,old.status as OrderStatus,idx);
+     if(b.status==="preparing"){
+      return {...norm,newCount:0,preparingCount:norm.quantity-norm.readyCount-norm.servedCount};
+     }
+     if(b.status==="ready"){
+      return {...norm,newCount:0,preparingCount:0,readyCount:norm.quantity-norm.servedCount};
+     }
+     if(b.status==="served"){
+      return {...norm,newCount:0,preparingCount:0,readyCount:0,servedCount:norm.quantity};
+     }
+     return norm;
+    });
     const reason=b.status==="cancelled"?checkedText(b.reason,180,true):"";
-    const changed=await db.prepare("UPDATE orders SET status = ?, cancel_reason = ?, updated_at = ? WHERE id = ? AND status = ?"+(b.status==="cancelled"?" AND paid = 0":"")).bind(b.status,reason,Date.now(),id,old.status).run();
+    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, cancel_reason = ?, updated_at = ? WHERE id = ? AND status = ?"+(b.status==="cancelled"?" AND paid = 0":"")).bind(JSON.stringify(updatedItems),b.status,reason,Date.now(),id,old.status).run();
     if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
-   }return json({ok:true});
+   }notifyRealtimeInvalidation(currentStoreId(),"orders");return json({ok:true});
   }
-  if(request.method==="PATCH"&&path==="admin/call"){allow("tables.manage");if(!Number.isInteger(b.createdAt))throw new OrderError("Yêu cầu hỗ trợ không hợp lệ.");const resolved=await db.prepare("UPDATE service_requests SET status = ? WHERE id = ? AND status = ? AND created_at = ?").bind("done",checkedText(b.id,60,true),"open",b.createdAt).run();if(resolved.meta.changes!==1)throw new OrderError("Yêu cầu đã thay đổi. Vui lòng tải lại.",409);return json({ok:true});}
+  if(request.method==="PATCH"&&path==="admin/call"){allow("tables.manage");if(!Number.isInteger(b.createdAt))throw new OrderError("Yêu cầu hỗ trợ không hợp lệ.");const resolved=await db.prepare("UPDATE service_requests SET status = ? WHERE id = ? AND status = ? AND created_at = ?").bind("done",checkedText(b.id,60,true),"open",b.createdAt).run();if(resolved.meta.changes!==1)throw new OrderError("Yêu cầu đã thay đổi. Vui lòng tải lại.",409);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true});}
   if(request.method==="PATCH"&&path==="admin/promotion"){
    allow("menu.manage");const id=checkedText(b.id,60,true);
    const item=await db.prepare("SELECT price FROM menu_items WHERE id = ?").bind(id).first<{price:number}>();
    if(!item)throw new OrderError("Không tìm thấy món.",404);
    const promotion=validatePromotion(b.promotion,item.price);
-   await db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion)).run();return json({ok:true});
+   await db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion)).run();notifyRealtimeInvalidation(currentStoreId(),"menu");return json({ok:true});
   }
   if(request.method==="PATCH"&&path==="admin/item"){
    allow("menu.manage");
    const id=checkedText(b.id??crypto.randomUUID(),60,true);
-   if(b.toggle!==undefined){if(b.toggle!==0&&b.toggle!==1)throw new OrderError("Trạng thái món không hợp lệ.");await db.prepare("UPDATE menu_items SET available = ? WHERE id = ?").bind(b.toggle,id).run();return json({ok:true});}
+   if(b.toggle!==undefined){if(b.toggle!==0&&b.toggle!==1)throw new OrderError("Trạng thái món không hợp lệ.");await db.prepare("UPDATE menu_items SET available = ? WHERE id = ?").bind(b.toggle,id).run();notifyRealtimeInvalidation(currentStoreId(),"menu");return json({ok:true});}
    if(b.available!==0&&b.available!==1)throw new OrderError("Vui lòng chọn trạng thái phục vụ của món.");
    const name=checkedText(b.name,80,true),description=checkedText(b.description??"",240),badge=checkedText(b.badge??"",32);
    if(!categories.some(c=>c.id===b.category&&c.id!=="all"))throw new OrderError("Nhóm món không hợp lệ.");if(!Number.isInteger(b.price)||b.price<1000||b.price>2000000)throw new OrderError("Giá món phải từ 1.000 đến 2.000.000 ₫.");
@@ -260,12 +331,12 @@ async function handleScoped(request:Request){
    const extras=b.extras===undefined?undefined:validateExtras(b.extras);
    const saved=await db.prepare("SELECT value FROM settings WHERE key = ?").bind("promotion:"+id).first<{value:string}>();
    const promotion=validatePromotion(b.promotion===undefined?(saved?JSON.parse(saved.value):null):b.promotion,b.price);
-   const itemWrite=db.prepare("INSERT INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, category = excluded.category, price = excluded.price, image = excluded.image, badge = excluded.badge, available = excluded.available").bind(id,name,description,b.category,b.price,image,badge,b.available===0?0:1,Date.now());await db.batch([itemWrite,...(extras===undefined?[]:[db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("extras:"+id,JSON.stringify(extras))]),db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion))]);return json({ok:true});
+   const itemWrite=db.prepare("INSERT INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, category = excluded.category, price = excluded.price, image = excluded.image, badge = excluded.badge, available = excluded.available").bind(id,name,description,b.category,b.price,image,badge,b.available===0?0:1,Date.now());await db.batch([itemWrite,...(extras===undefined?[]:[db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("extras:"+id,JSON.stringify(extras))]),db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind("promotion:"+id,JSON.stringify(promotion))]);notifyRealtimeInvalidation(currentStoreId(),"menu");return json({ok:true});
   }
   if(request.method==="PATCH"&&path==="admin/shop"){
    allow("settings.manage");
    if(typeof b.open!=="boolean")throw new OrderError("Trạng thái nhận món không hợp lệ.");
-   const previous=await getShop();const shop={logo:validateShopLogo(b.logo===undefined?previous.logo:b.logo),name:checkedText(b.name,40,true),tagline:checkedText(b.tagline,60),hours:checkedText(b.hours,50),address:checkedText(b.address,140),open:!!b.open};await saveStoreBranding(shop);return json({ok:true,shop});
+   const previous=await getShop();const shop={logo:validateShopLogo(b.logo===undefined?previous.logo:b.logo),name:checkedText(b.name,40,true),tagline:checkedText(b.tagline,60),hours:checkedText(b.hours,50),address:checkedText(b.address,140),open:!!b.open};await saveStoreBranding(shop);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,shop});
   }
   if(request.method==="PATCH"&&path==="admin/table"){
    allow("tables.manage");
@@ -276,6 +347,7 @@ async function handleScoped(request:Request){
     // One guarded write: a concurrently opened session or historical reference blocks deletion.
     const removed=await db.prepare("DELETE FROM dining_tables WHERE id = ? AND NOT EXISTS (SELECT 1 FROM table_sessions WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM orders WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM service_requests WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_settlements WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_payment_receipts WHERE table_id = ?) AND NOT EXISTS (SELECT 1 FROM table_transfers WHERE from_table_id = ? OR to_table_id = ?)").bind(id,id,id,id,id,id,id,id).run();
     if(removed.meta.changes!==1)throw new OrderError("Bàn đang có lượt phục vụ hoặc lịch sử liên quan nên không thể xóa. Lịch sử được giữ nguyên; bạn vẫn có thể sửa tên bàn.",409);
+    notifyRealtimeInvalidation(currentStoreId(),"board");
     return json({ok:true});
    }
    const name=checkedText(b.name,30,true),zone=checkedText(b.zone,40,true);
@@ -296,16 +368,20 @@ async function handleScoped(request:Request){
     if(created.name!==name||created.zone!==zone)throw new OrderError("Yêu cầu này đã tạo bàn trước đó. Vui lòng tải lại danh sách bàn.",409);
     const table=await db.prepare("SELECT * FROM dining_tables WHERE id = ?").bind(created.id).first<{id:string;name:string;zone:string;token:string}>();
     if(!table)throw new OrderError("Không tìm thấy bàn đã tạo. Vui lòng tải lại.",404);
-    const replayed=table.token!==token;return json({ok:true,table,replayed},replayed?200:201);
+    const replayed=table.token!==token;
+    if(!replayed)notifyRealtimeInvalidation(currentStoreId(),"board");
+    return json({ok:true,table,replayed},replayed?200:201);
    }
    const updated=await db.prepare("UPDATE dining_tables SET name = ?, zone = ? WHERE id = ?").bind(name,zone,checkedText(b.id,10,true)).run();
    if(updated.meta.changes!==1)throw new OrderError("Không tìm thấy bàn cần cập nhật.",404);
+   notifyRealtimeInvalidation(currentStoreId(),"board");
    return json({ok:true});
   }
   return json({error:"Thao tác không được hỗ trợ."},405);
  }catch(e){if(e instanceof OrderError)return json({error:e.message},e.status);console.error("QR ordering API error",e instanceof Error?e.message:"Unknown error");return json({error:"Chưa kết nối được với quán. Vui lòng thử lại."},500);}
 }
 async function handle(request:Request){
+ const t0 = performance.now();
  try{
   verifyCsrf(request);
   await ensurePlatformSchema();
@@ -353,7 +429,7 @@ async function handle(request:Request){
     return json({ok:true});
    }
    if(path==="auth/bootstrap"&&request.method==="POST"){
-    const b=await readBody(request) as {setupToken?:unknown;email?:unknown;displayName?:unknown;password?:unknown;forceReset?:unknown};
+    const b=await readBody(request) as {setupToken?:unknown;email?:unknown;displayName?:unknown;password?:unknown};
     const result=await bootstrapOwner(request,b);
     const access=await resolveAccessSafe(result.cookie,result.identity);
     return json({ok:true,access},200,{"Set-Cookie":result.cookie});
@@ -371,15 +447,31 @@ async function handle(request:Request){
    }
   }
 
-  const store=await resolveStore(request);
-  return await inStore(store.id,async()=>{
+  let tStore = t0;
+  const store = await resolveStore(request);
+  tStore = performance.now();
+  const resp = await inStore(store.id,async()=>{
    if(store.status!=="active"&&!(await getStaffAccess(request)).isOwner){
     throw new OrderError("Cửa hàng đang tạm khóa. Vui lòng liên hệ GAERU Soffware hoặc truy cập /gaeru để chọn cửa hàng khác.",403);
    }
    return handleScoped(request);
   });
+  const tTotal = performance.now();
+  resp.headers.set("Server-Timing", `store;dur=${(tStore - t0).toFixed(1)}, total;dur=${(tTotal - t0).toFixed(1)}`);
+  return resp;
  }
- catch(error){if(error instanceof OrderError)return json({error:error.message},error.status);console.error("API error",error instanceof Error?error.message:"Unknown",error instanceof Error?error.stack:"");return json({error:error instanceof Error?error.message:"Chưa kết nối được với hệ thống. Vui lòng thử lại."},500);}
+ catch(error){
+  const tTotal = performance.now();
+  let resp: Response;
+  if(error instanceof OrderError) resp = json({error:error.message},error.status);
+  else {
+   const correlationId = crypto.randomUUID().slice(0, 8);
+   console.error(`[API Error ${correlationId}]`, error instanceof Error ? error.message : "Unknown", error instanceof Error ? error.stack : "");
+   resp = json({error:"Chưa kết nối được với hệ thống. Vui lòng thử lại.", correlationId},500);
+  }
+  resp.headers.set("Server-Timing", `total;dur=${(tTotal - t0).toFixed(1)}`);
+  return resp;
+ }
 }
 export const GET=handle;
 export const POST=handle;

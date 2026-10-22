@@ -3,6 +3,8 @@ import { rootDatabase } from "./store-database";
 import { OrderError } from "./menu";
 import { normalizeStaffEmail } from "./staff-permissions";
 import {
+  constantTimeEqual,
+  DUMMY_PBKDF2_HASH,
   generateRandomToken,
   hashPassword,
   sha256Hex,
@@ -33,6 +35,56 @@ export const FALLBACK_SESSION_COOKIE_NAME = "gaeru-session";
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 3600; // 30 days
 const LOGIN_LOCK_MINUTES = 15;
 const MAX_CONSECUTIVE_LOGIN_FAILS = 10;
+const MAX_IP_LOGIN_FAILS = 30;
+
+export function getTrustedClientIp(request: Request): string {
+  const cfIp = request.headers.get("cf-connecting-ip")?.trim();
+  if (cfIp && (/^([0-9]{1,3}\.){3}[0-9]{1,3}$/.test(cfIp) || /^[a-fA-F0-9:]+$/.test(cfIp))) {
+    return cfIp;
+  }
+  return "127.0.0.1";
+}
+
+export async function checkRateLimit(
+  key: string,
+  maxCount: number,
+  windowMs: number,
+  lockMs: number
+): Promise<{ allowed: boolean; retryAfter?: number }> {
+  await ensurePlatformSchema();
+  const db = rootDatabase();
+  const now = Date.now();
+  const existing = await db
+    .prepare("SELECT fail_count, locked_until, updated_at FROM auth_login_attempts WHERE attempt_key = ?")
+    .bind(key)
+    .first<{ fail_count: number; locked_until: number; updated_at: number }>();
+
+  if (existing && existing.locked_until > now) {
+    return { allowed: false, retryAfter: Math.ceil((existing.locked_until - now) / 1000) };
+  }
+
+  const isWindowExpired = !existing || (now - existing.updated_at > windowMs);
+  const newCount = isWindowExpired ? 1 : existing.fail_count + 1;
+  const isLocked = newCount >= maxCount;
+  const lockUntil = isLocked ? now + lockMs : 0;
+
+  await db
+    .prepare(
+      `INSERT INTO auth_login_attempts (attempt_key, fail_count, locked_until, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(attempt_key) DO UPDATE SET
+         fail_count = excluded.fail_count,
+         locked_until = excluded.locked_until,
+         updated_at = excluded.updated_at`
+    )
+    .bind(key, newCount, lockUntil, now)
+    .run();
+
+  if (isLocked) {
+    return { allowed: false, retryAfter: Math.ceil(lockMs / 1000) };
+  }
+  return { allowed: true };
+}
 
 export function isSelfAuthMode(): boolean {
   return env.AUTH_MODE === "self";
@@ -236,7 +288,18 @@ export async function logAuthAudit(
   }
 }
 
+const requestIdentityCache = new WeakMap<Request, Promise<AuthIdentity | null>>();
+
 export async function resolveIdentity(request: Request): Promise<AuthIdentity | null> {
+  let cached = requestIdentityCache.get(request);
+  if (!cached) {
+    cached = resolveIdentityInternal(request);
+    requestIdentityCache.set(request, cached);
+  }
+  return cached;
+}
+
+async function resolveIdentityInternal(request: Request): Promise<AuthIdentity | null> {
   // 1. Sites gateway headers take precedence if present
   const sitesUserId = request.headers.get("oai-authenticated-user-id")?.trim();
   const sitesEmail = normalizeStaffEmail(
@@ -308,21 +371,48 @@ export async function loginWithPassword(
   await ensurePlatformSchema();
   const db = rootDatabase();
   const now = Date.now();
+  const clientIp = getTrustedClientIp(request);
+  const ipKey = "ip:" + (await sha256Hex(clientIp)).slice(0, 16);
 
   const rawEmail = typeof body.email === "string" ? body.email.trim() : "";
   const email = normalizeStaffEmail(rawEmail);
   const password = typeof body.password === "string" ? body.password : "";
+  const accountIpKey = email ? "acc_ip:" + (await sha256Hex(email + ":" + clientIp)).slice(0, 16) : "";
+  const accountKey = email ? "acc:" + (await sha256Hex(email)).slice(0, 16) : "";
 
-  // 1. Check lockout attempts
+  // 1. Check IP-level lockout
+  const ipAttempt = await db
+    .prepare("SELECT fail_count, locked_until FROM auth_login_attempts WHERE attempt_key = ?")
+    .bind(ipKey)
+    .first<{ fail_count: number; locked_until: number }>();
+
+  if (ipAttempt && ipAttempt.locked_until > now) {
+    throw new OrderError(
+      "Quá nhiều lần đăng nhập không thành công từ mạng này. Vui lòng thử lại sau ít phút.",
+      429
+    );
+  }
+
+  // 2. Check account/IP lockout
   if (email) {
-    const attempt = await db
-      .prepare(
-        "SELECT fail_count, locked_until FROM auth_login_attempts WHERE attempt_key = ?"
-      )
-      .bind(email)
+    const accIpAttempt = await db
+      .prepare("SELECT fail_count, locked_until FROM auth_login_attempts WHERE attempt_key = ?")
+      .bind(accountIpKey)
       .first<{ fail_count: number; locked_until: number }>();
 
-    if (attempt && attempt.locked_until > now) {
+    if (accIpAttempt && accIpAttempt.locked_until > now) {
+      throw new OrderError(
+        "Tài khoản tạm khóa do đăng nhập sai nhiều lần. Vui lòng thử lại sau ít phút.",
+        429
+      );
+    }
+
+    const accAttempt = await db
+      .prepare("SELECT fail_count, locked_until FROM auth_login_attempts WHERE attempt_key = ?")
+      .bind(accountKey)
+      .first<{ fail_count: number; locked_until: number }>();
+
+    if (accAttempt && accAttempt.locked_until > now) {
       throw new OrderError(
         "Tài khoản tạm khóa do đăng nhập sai nhiều lần. Vui lòng thử lại sau ít phút.",
         429
@@ -330,7 +420,7 @@ export async function loginWithPassword(
     }
   }
 
-  // 2. Fetch credential
+  // 3. Fetch credential
   const cred = email
     ? await db
         .prepare(
@@ -345,59 +435,62 @@ export async function loginWithPassword(
         }>()
     : null;
 
-  // 3. Verify password
+  // 4. Verify password with timing equalization (P-08)
   let isValid = false;
   let needsRehash = false;
   if (cred && password) {
     const check = await verifyPassword(password, cred.password_hash);
     isValid = check.valid;
     needsRehash = check.needsRehash;
+  } else if (password) {
+    // Constant-time dummy verification when credential does not exist (P-08)
+    await verifyPassword(password, DUMMY_PBKDF2_HASH);
   }
 
   if (!isValid || !cred || !email) {
-    // Record failed attempt uniformly
-    if (email) {
-      const attempt = await db
-        .prepare("SELECT fail_count FROM auth_login_attempts WHERE attempt_key = ?")
-        .bind(email)
-        .first<{ fail_count: number }>();
+    // Record failed attempts atomically
+    const lockUntil = now + LOGIN_LOCK_MINUTES * 60 * 1000;
 
-      const currentCount = (attempt?.fail_count ?? 0) + 1;
-      if (currentCount >= MAX_CONSECUTIVE_LOGIN_FAILS) {
-        const lockUntil = now + LOGIN_LOCK_MINUTES * 60 * 1000;
-        await db
-          .prepare(
-            `INSERT INTO auth_login_attempts (attempt_key, fail_count, locked_until, updated_at)
-             VALUES (?, 0, ?, ?)
-             ON CONFLICT(attempt_key) DO UPDATE SET fail_count = 0, locked_until = excluded.locked_until, updated_at = excluded.updated_at`
-          )
-          .bind(email, lockUntil, now)
-          .run();
-        await logAuthAudit(email, "login_locked", { lockedUntil: lockUntil });
-      } else {
-        await db
-          .prepare(
-            `INSERT INTO auth_login_attempts (attempt_key, fail_count, locked_until, updated_at)
-             VALUES (?, ?, 0, ?)
-             ON CONFLICT(attempt_key) DO UPDATE SET fail_count = excluded.fail_count, updated_at = excluded.updated_at`
-          )
-          .bind(email, currentCount, now)
-          .run();
-      }
+    // IP failure update
+    await db.prepare(
+      `INSERT INTO auth_login_attempts (attempt_key, fail_count, locked_until, updated_at)
+       VALUES (?, 1, 0, ?)
+       ON CONFLICT(attempt_key) DO UPDATE SET
+         fail_count = auth_login_attempts.fail_count + 1,
+         locked_until = CASE WHEN (auth_login_attempts.fail_count + 1) >= ? THEN ? ELSE 0 END,
+         updated_at = excluded.updated_at`
+    ).bind(ipKey, now, MAX_IP_LOGIN_FAILS, lockUntil).run();
+
+    if (email) {
+      // Account + IP pair failure update
+      await db.prepare(
+        `INSERT INTO auth_login_attempts (attempt_key, fail_count, locked_until, updated_at)
+         VALUES (?, 1, 0, ?)
+         ON CONFLICT(attempt_key) DO UPDATE SET
+           fail_count = auth_login_attempts.fail_count + 1,
+           locked_until = CASE WHEN (auth_login_attempts.fail_count + 1) >= ? THEN ? ELSE 0 END,
+           updated_at = excluded.updated_at`
+      ).bind(accountIpKey, now, MAX_CONSECUTIVE_LOGIN_FAILS, lockUntil).run();
+
+      // Account global failure update
+      await db.prepare(
+        `INSERT INTO auth_login_attempts (attempt_key, fail_count, locked_until, updated_at)
+         VALUES (?, 1, 0, ?)
+         ON CONFLICT(attempt_key) DO UPDATE SET
+           fail_count = auth_login_attempts.fail_count + 1,
+           locked_until = CASE WHEN (auth_login_attempts.fail_count + 1) >= ? THEN ? ELSE 0 END,
+           updated_at = excluded.updated_at`
+      ).bind(accountKey, now, MAX_CONSECUTIVE_LOGIN_FAILS + 5, lockUntil).run();
+
       await logAuthAudit(email, "login_failed");
     }
     throw new OrderError("Email hoặc mật khẩu không đúng.", 401);
   }
 
-  // 4. Success: reset attempt count
-  await db
-    .prepare(
-      `INSERT INTO auth_login_attempts (attempt_key, fail_count, locked_until, updated_at)
-       VALUES (?, 0, 0, ?)
-       ON CONFLICT(attempt_key) DO UPDATE SET fail_count = 0, locked_until = 0, updated_at = excluded.updated_at`
-    )
-    .bind(email, now)
-    .run();
+  // 5. Success: reset attempt count
+  await db.batch([
+    db.prepare("DELETE FROM auth_login_attempts WHERE attempt_key IN (?, ?, ?)").bind(ipKey, accountIpKey, accountKey)
+  ]);
 
   // Rehash if needed
   if (needsRehash) {
@@ -412,7 +505,7 @@ export async function loginWithPassword(
     }
   }
 
-  // 5. Create session
+  // 6. Create session
   const token = generateRandomToken(32);
   const tokenHash = await sha256Hex(token);
   const expiresAt = now + SESSION_MAX_AGE_SECONDS * 1000;
@@ -604,30 +697,24 @@ export async function changePassword(
 
 export async function canBootstrap(): Promise<{
   canBootstrap: boolean;
-  existingAccounts?: boolean;
-  count?: number;
-  hasSetupToken?: boolean;
-  tokenPrefix?: string;
-  error?: string;
 }> {
   try {
     await ensurePlatformSchema();
     const db = rootDatabase();
+    const rawEnv = typeof env.SETUP_TOKEN === "string" ? env.SETUP_TOKEN.trim() : "";
+    if (!rawEnv || rawEnv.length < 16) {
+      return { canBootstrap: false };
+    }
     const count = await db
       .prepare("SELECT COUNT(*) as count FROM auth_credentials")
       .first<{ count: number }>();
     const total = Number(count?.count ?? 0);
-    const rawEnv = typeof env.SETUP_TOKEN === "string" ? env.SETUP_TOKEN.trim() : "";
     return {
       canBootstrap: total === 0,
-      existingAccounts: total > 0,
-      count: total,
-      hasSetupToken: Boolean(rawEnv),
-      tokenPrefix: rawEnv ? rawEnv.slice(0, 8) + "..." : "none",
     };
   } catch (err) {
     console.error("canBootstrap error:", err);
-    return { canBootstrap: false, error: err instanceof Error ? err.message : String(err) };
+    return { canBootstrap: false };
   }
 }
 
@@ -638,33 +725,36 @@ export async function bootstrapOwner(
     email?: unknown;
     displayName?: unknown;
     password?: unknown;
-    forceReset?: unknown;
   }
 ): Promise<{ identity: AuthIdentity; cookie: string }> {
   await ensurePlatformSchema();
   const db = rootDatabase();
   const now = Date.now();
 
-  // Check 1: Credentials table must be empty unless forceReset is explicitly requested
+  // Check 1: SETUP_TOKEN secret must be configured in environment (fail-closed, zero hardcoded fallback)
+  const rawEnvToken = typeof env.SETUP_TOKEN === "string" ? env.SETUP_TOKEN.trim() : "";
+  if (!rawEnvToken || rawEnvToken.length < 16) {
+    throw new OrderError("Hệ thống chưa được cấu hình mã khởi tạo an toàn.", 403);
+  }
+
+  const setupToken = typeof body.setupToken === "string" ? body.setupToken.trim() : "";
+  const tokenMatches =
+    setupToken.length === rawEnvToken.length &&
+    constantTimeEqual(new TextEncoder().encode(setupToken), new TextEncoder().encode(rawEnvToken));
+  if (!tokenMatches) {
+    throw new OrderError("Mã khởi tạo không hợp lệ.", 403);
+  }
+
+  // Check 2: Credentials table must be completely empty (no forceReset bypass)
   const count = await db
     .prepare("SELECT COUNT(*) as count FROM auth_credentials")
     .first<{ count: number }>();
   const total = Number(count?.count ?? 0);
-  const isForceReset = Boolean(body.forceReset);
-
-  if (total > 0 && !isForceReset) {
+  if (total > 0) {
     throw new OrderError(
       "Hệ thống đã có tài khoản quản trị. Không thể khởi tạo lại.",
       403
     );
-  }
-
-  // Check 2: SETUP_TOKEN secret must match (trimmed, fallback to default secret)
-  const setupToken = typeof body.setupToken === "string" ? body.setupToken.trim() : "";
-  const rawEnvToken = typeof env.SETUP_TOKEN === "string" ? env.SETUP_TOKEN.trim() : "";
-  const expectedToken = rawEnvToken || "gaeru_sec_8f3a9b2e7c1d4a6e8b0d5f2a7e4c1b9d";
-  if (!setupToken || (setupToken !== expectedToken && setupToken !== "gaeru_sec_8f3a9b2e7c1d4a6e8b0d5f2a7e4c1b9d")) {
-    throw new OrderError("Mã khởi tạo không hợp lệ.", 403);
   }
 
   // Check 3: Email must belong to STAFF_EMAILS
@@ -685,61 +775,38 @@ export async function bootstrapOwner(
       ? body.displayName.trim()
       : "Quản trị viên";
 
-  // Check 5: Resolve user_id
-  const existingCred = await db
-    .prepare("SELECT user_id FROM auth_credentials WHERE email = ?")
-    .bind(email)
-    .first<{ user_id: string }>();
-
-  const bound = await db
-    .prepare("SELECT user_id FROM staff_owner_bindings WHERE email = ?")
-    .bind(email)
-    .first<{ user_id: string }>();
-
-  const userId = existingCred?.user_id || bound?.user_id || crypto.randomUUID();
+  // Check 5: Atomic insertion invariant (prevents concurrent race conditions)
+  const userId = crypto.randomUUID();
   const passwordHash = await hashPassword(password);
 
-  if (total > 0 && isForceReset) {
-    await db.batch([
-      db
-        .prepare(
-          `INSERT INTO auth_credentials (email, user_id, password_hash, display_name, must_change_password, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 0, ?, ?)
-           ON CONFLICT(email) DO UPDATE SET
-             password_hash = excluded.password_hash,
-             display_name = CASE WHEN excluded.display_name != '' THEN excluded.display_name ELSE auth_credentials.display_name END,
-             must_change_password = 0,
-             updated_at = excluded.updated_at`
-        )
-        .bind(email, userId, passwordHash, displayName, now, now),
-      db
-        .prepare(
-          "INSERT OR IGNORE INTO staff_owner_bindings (email, user_id, created_at, last_login_at) VALUES (?, ?, ?, ?)"
-        )
-        .bind(email, userId, now, now),
-    ]);
-  } else {
-    await db.batch([
-      db
-        .prepare(
-          "INSERT INTO auth_credentials (email, user_id, password_hash, display_name, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)"
-        )
-        .bind(email, userId, passwordHash, displayName, now, now),
-      db
-        .prepare(
-          "INSERT OR IGNORE INTO staff_owner_bindings (email, user_id, created_at, last_login_at) VALUES (?, ?, ?, ?)"
-        )
-        .bind(email, userId, now, now),
-    ]);
-  }
-
-  // Clear any lockout attempt for this owner email
-  await db
-    .prepare("DELETE FROM auth_login_attempts WHERE attempt_key = ?")
-    .bind(email)
+  const insertResult = await db
+    .prepare(
+      `INSERT INTO auth_credentials (email, user_id, password_hash, display_name, must_change_password, created_at, updated_at)
+       SELECT ?, ?, ?, ?, 0, ?, ?
+       WHERE (SELECT COUNT(*) FROM auth_credentials) = 0`
+    )
+    .bind(email, userId, passwordHash, displayName, now, now)
     .run();
 
-  await logAuthAudit(email, "bootstrap_owner", { isForceReset });
+  if (insertResult.meta.changes !== 1) {
+    throw new OrderError(
+      "Hệ thống đã có tài khoản quản trị hoặc đang được khởi tạo. Không thể thực hiện.",
+      403
+    );
+  }
+
+  await db.batch([
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO staff_owner_bindings (email, user_id, created_at, last_login_at) VALUES (?, ?, ?, ?)"
+      )
+      .bind(email, userId, now, now),
+    db
+      .prepare("DELETE FROM auth_login_attempts WHERE attempt_key = ? OR attempt_key LIKE ?")
+      .bind(email, `%${email}%`),
+  ]);
+
+  await logAuthAudit(email, "bootstrap_owner", { status: "initialized" });
 
   const sessionToken = generateRandomToken(32);
   const sessionTokenHash = await sha256Hex(sessionToken);

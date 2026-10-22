@@ -5,7 +5,29 @@ export type MenuItem = { extras?:MenuExtra[]; promotion?:Promotion|null; id:stri
 export type DiningTable = { id:string; name:string; zone:string; token:string };
 export type Shop = { logo?:string; name:string; tagline:string; hours:string; address:string; open:boolean };
 export type CartLine = { key:string; itemId:string; quantity:number; extras:string[]; taste:string; note:string };
-export type OrderItem = { itemId:string; name:string; quantity:number; unitPrice:number; total:number; extras:string[]; taste:string; note:string; image:string };
+export type OrderItem = {
+  orderLineId?: string;
+  itemId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  extras: string[];
+  taste: string;
+  note: string;
+  image: string;
+  newCount?: number;
+  preparingCount?: number;
+  readyCount?: number;
+  servedCount?: number;
+};
+export type NormalizedOrderItem = OrderItem & {
+  orderLineId: string;
+  newCount: number;
+  preparingCount: number;
+  readyCount: number;
+  servedCount: number;
+};
 export type OrderStatus = "new" | "preparing" | "ready" | "served" | "cancelled";
 export type Order = { id:string; code:string; table_id:string; table_name:string; dining_session_id?:string|null; customer_name?:string; items:OrderItem[]; total:number; note:string; status:OrderStatus; paid:number; paid_at?:number|null; payment_method?:"cash"|"bank"|"other"|"unknown"; cancel_reason:string; created_at:number; updated_at:number };
 export type ServiceRequest = { id:string; table_id:string; table_name:string; session_id?:string|null; note?:string; kind:"service"|"bill"; status:"open"|"done"; created_at:number };
@@ -54,7 +76,7 @@ export class OrderError extends Error {constructor(message:string,public status=
 export function checkedText(v:unknown,max:number,required=false){if(typeof v!=="string"||v.length>max||(required&&!v.trim()))throw new OrderError("Vui lòng kiểm tra nội dung đã nhập.");return v.trim();}
 export function calculateOrder(raw:unknown,menu:MenuItem[]): {items:OrderItem[];total:number}{
  if(!Array.isArray(raw)||raw.length<1||raw.length>30)throw new OrderError("Vui lòng chọn từ 1 đến 30 món.");let units=0;
- const items=raw.map((r:unknown)=>{
+ const items=raw.map((r:unknown,index:number)=>{
   if(!r||typeof r!=="object")throw new OrderError("Món đã chọn không hợp lệ.");const l=r as CartLine,item=menu.find(m=>m.id===l.itemId);
   if(!item)throw new OrderError("Một món không còn trong thực đơn. Vui lòng chọn lại.",409);
   if(!item.available)throw new OrderError(`${item.name} vừa hết. Vui lòng chọn món khác.`,409);
@@ -64,12 +86,76 @@ export function calculateOrder(raw:unknown,menu:MenuItem[]): {items:OrderItem[];
   const taste=checkedText(l.taste??"",40);
   if((item.category==="drink"&&!tastes.includes(taste))||(item.category!=="drink"&&taste!==""))throw new OrderError("Vui lòng chọn lại khẩu vị của món.");
   const note=checkedText(l.note??"",240),unitPrice=linePrice(l,item);
-  return {itemId:item.id,name:item.name,quantity:l.quantity,unitPrice,total:unitPrice*l.quantity,extras:allowed.filter(a=>l.extras.includes(a.id)).map(a=>a.label),taste,note,image:item.image};
+  return {
+    orderLineId:"line_"+(index+1),
+    itemId:item.id,
+    name:item.name,
+    quantity:l.quantity,
+    unitPrice,
+    total:unitPrice*l.quantity,
+    extras:allowed.filter(a=>l.extras.includes(a.id)).map(a=>a.label),
+    taste,
+    note,
+    image:item.image,
+    newCount:l.quantity,
+    preparingCount:0,
+    readyCount:0,
+    servedCount:0
+  };
  });
  if(units>60)throw new OrderError("Mỗi lần gọi tối đa 60 phần. Vui lòng gọi nhân viên cho đơn lớn.");const total=items.reduce((s,i)=>s+i.total,0);
  if(total>10000000)throw new OrderError("Vui lòng liên hệ nhân viên để đặt đơn lớn.");return {items,total};
 }
 export function canTransition(from:OrderStatus,to:OrderStatus){return statuses[from]?.next===to||(to==="cancelled"&&(from==="new"||from==="preparing"));}
+
+export function normalizeOrderItem(item:OrderItem,orderStatus:OrderStatus,index=0):NormalizedOrderItem{
+ const orderLineId=item.orderLineId||`line_${index+1}`;
+ if(orderStatus==="cancelled"){
+  return {...item,orderLineId,newCount:0,preparingCount:0,readyCount:0,servedCount:0};
+ }
+ const hasCounts=typeof item.newCount==="number"||typeof item.preparingCount==="number"||typeof item.readyCount==="number"||typeof item.servedCount==="number";
+ if(hasCounts){
+  const newCount=Math.max(0,item.newCount??0);
+  const preparingCount=Math.max(0,item.preparingCount??0);
+  const readyCount=Math.max(0,item.readyCount??0);
+  const servedCount=Math.max(0,item.servedCount??0);
+  if(newCount+preparingCount+readyCount+servedCount===item.quantity){
+   return {...item,orderLineId,newCount,preparingCount,readyCount,servedCount};
+  }
+ }
+ return {
+  ...item,
+  orderLineId,
+  newCount:orderStatus==="new"?item.quantity:0,
+  preparingCount:orderStatus==="preparing"?item.quantity:0,
+  readyCount:orderStatus==="ready"?item.quantity:0,
+  servedCount:orderStatus==="served"?item.quantity:0
+ };
+}
+
+export function projectOrderStatus(items:OrderItem[],currentStatus:OrderStatus):OrderStatus{
+ if(currentStatus==="cancelled")return "cancelled";
+ if(!items.length)return currentStatus;
+ const normalized=items.map((it,idx)=>normalizeOrderItem(it,currentStatus,idx));
+ const totalQty=normalized.reduce((s,it)=>s+it.quantity,0);
+ const totalServed=normalized.reduce((s,it)=>s+it.servedCount,0);
+ const totalReady=normalized.reduce((s,it)=>s+it.readyCount,0);
+ const totalPrep=normalized.reduce((s,it)=>s+it.preparingCount,0);
+ const totalNew=normalized.reduce((s,it)=>s+it.newCount,0);
+
+ if(totalQty>0&&totalServed===totalQty)return "served";
+ if(totalQty>0&&totalNew===totalQty)return "new";
+ if(totalReady>0&&totalNew===0&&totalPrep===0)return "ready";
+ if(totalPrep>0||(totalReady>0&&(totalPrep>0||totalNew>0))||(totalServed>0&&totalServed<totalQty))return "preparing";
+ return currentStatus;
+}
+
+export function canCancelOrder(order:Order):boolean{
+ if(order.paid!==0||order.status==="cancelled")return false;
+ if(order.status!=="new"&&order.status!=="preparing")return false;
+ const hasServed=order.items.some(item=>(item.servedCount??0)>0);
+ return !hasServed;
+}
 
 export function shopInitials(name:string){return name.trim().split(/\s+/).filter(Boolean).slice(0,2).map(word=>Array.from(word)[0]).join("").toLocaleUpperCase("vi-VN")||"Q";}
 export function validateShopLogo(value:unknown):string{
@@ -81,7 +167,16 @@ export function validateShopLogo(value:unknown):string{
  if(size(16)<1||size(20)<1||size(16)>512||size(20)>512)throw new OrderError("Logo cần được thu gọn trước khi lưu.");
  return value;
 }
-export function brandingRevision(shop:Shop){let hash=2166136261;for(const character of shop.name+"|"+(shop.logo??""))hash=Math.imul(hash^character.charCodeAt(0),16777619);return (hash>>>0).toString(36);}
+export function brandingRevision(shop:Shop){
+ const logo = shop.logo ?? "";
+ if (logo.includes("/api/branding-icon")) {
+  const match = logo.match(/[?&]v=([a-z0-9]+)/);
+  if (match) return match[1];
+ }
+ let hash=2166136261;
+ for(const character of shop.name+"|"+logo)hash=Math.imul(hash^character.charCodeAt(0),16777619);
+ return (hash>>>0).toString(36);
+}
 export function shopIconSvg(name:string){const initials=shopInitials(name).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[c]!));return `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#244f3c"/><text x="64" y="70" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-weight="700" font-size="50" fill="#ffffff">${initials}</text></svg>`;}
 
 export function validateExtras(raw:unknown):MenuExtra[]{

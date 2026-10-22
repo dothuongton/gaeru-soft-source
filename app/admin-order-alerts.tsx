@@ -466,7 +466,23 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
   return {soundMode,setSoundMode,active: visible ? active : null, durationMs, waiting: Math.max(0, queue.length - 1), soundEnabled: soundMode!=="silent", soundReady: readiness.ready, soundNeedsGesture: readiness.needsGesture, audioNotice, toggleSound: activateSound, testSound, testChime, voiceOptions, selectedVoice, chooseVoice, voiceSummary, observeDashboard, restrictAlerts, resetAlerts, observeOrders, chime, dismiss};
 }
 
-export function NewOrderPopup({alert, waiting, durationMs = ADMIN_ALERT_DURATION_MS, onDismiss, onOpenTable}: {alert: AdminAlert | null; waiting: number; durationMs?: number; onDismiss: () => void; onOpenTable: (tableId: string) => void}) {
+export function NewOrderPopup({
+  alert,
+  waiting,
+  durationMs = ADMIN_ALERT_DURATION_MS,
+  onDismiss,
+  onOpenTable,
+  onOpenOrder,
+  canSeeMoney = true,
+}: {
+  alert: AdminAlert | null;
+  waiting: number;
+  durationMs?: number;
+  onDismiss: () => void;
+  onOpenTable: (tableId: string) => void;
+  onOpenOrder?: (orderId?: string) => void;
+  canSeeMoney?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const popup = ref.current;
@@ -477,10 +493,27 @@ export function NewOrderPopup({alert, waiting, durationMs = ADMIN_ALERT_DURATION
   if (!alert) return null;
   const opening = isOpeningAlert(alert);
   const support = isSupportAlert(alert);
+  const handleAction = () => {
+    if (opening || support) {
+      onOpenTable(alert.tableId);
+    } else if (onOpenOrder) {
+      onOpenOrder(alert.orderIds?.[0]);
+    } else {
+      onOpenTable(alert.tableId);
+    }
+    onDismiss();
+  };
+
   return <div key={alert.id} ref={ref} popover="manual" className="admin-order-popup" role="status" aria-live="polite" aria-atomic="true">
     <span className="admin-order-popup-icon">{opening ? <DoorOpen size={25}/> : <BellRing size={25}/>}</span>
-    <div className="admin-order-popup-content"><span className="admin-order-popup-label">{support ? "BÀN CẦN HỖ TRỢ" : opening ? "YÊU CẦU MỞ BÀN MỚI" : "CÓ ĐƠN GỌI MÓN MỚI"}</span><strong>{adminAlertSpeech(alert)}</strong><p>{support ? "Đang chờ nhân viên hỗ trợ" : opening ? (alert.customerName ? "Khách: " + alert.customerName + " · " : "") + "Đang chờ quản trị xác nhận" : <>{alert.orderCount} đơn mới · {money(alert.total)}{alert.customerName ? " · " + alert.customerName : ""}</>}</p><button type="button" onClick={() => {onOpenTable(alert.tableId); onDismiss();}}>{(opening || support) ? "Xem yêu cầu" : "Xử lý đơn"}<ArrowUpRight size={14}/></button></div>
-    <button type="button" className="admin-order-popup-close" aria-label={opening ? "Ẩn thông báo, giữ yêu cầu mở bàn chờ xử lý" : "Ẩn thông báo, giữ đơn mới trên bàn"} onClick={onDismiss}><X size={18}/></button>
+    <div className="admin-order-popup-content">
+      <span className="admin-order-popup-label">{support ? "BÀN CẦN HỖ TRỢ" : opening ? "YÊU CẦU MỞ BÀN MỚI" : "CÓ ĐƠN GỌI MÓN MỚI"}</span>
+      <strong>{alert.tableName} · {opening ? "Mở bàn mới" : support ? "Cần hỗ trợ" : `${alert.orderCount} đơn mới`}</strong>
+      <span className="sr-only">{adminAlertSpeech(alert)}</span>
+      <p>{support ? "Đang chờ nhân viên hỗ trợ" : opening ? (alert.customerName ? "Khách: " + alert.customerName + " · " : "") + "Đang chờ quản trị xác nhận" : <>{alert.orderCount} đơn mới{canSeeMoney ? " · " + money(alert.total) : ""}{alert.customerName ? " · " + alert.customerName : ""}</>}</p>
+      <button type="button" style={{ minHeight: 44, minWidth: 44 }} onClick={handleAction}>{(opening || support) ? "Xem yêu cầu" : onOpenOrder ? "Xem đơn" : "Xử lý đơn"}<ArrowUpRight size={14}/></button>
+    </div>
+    <button type="button" className="admin-order-popup-close" style={{ minWidth: 44, minHeight: 44 }} aria-label={opening ? "Ẩn thông báo, giữ yêu cầu mở bàn chờ xử lý" : "Ẩn thông báo, giữ đơn mới trên bàn"} onClick={onDismiss}><X size={18}/></button>
     {waiting > 0 && <span className="admin-order-popup-waiting">Còn {waiting} thông báo</span>}
     <span className="admin-order-popup-timer" key={alert.id} style={{animationDuration: `${durationMs}ms`}} aria-hidden="true"/>
   </div>;
