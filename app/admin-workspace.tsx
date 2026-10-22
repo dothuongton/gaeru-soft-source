@@ -1,14 +1,11 @@
 "use client";
 import {useRef,useEffect} from "react";
-import type {ReactNode} from "react";
-import {Bell,ChevronLeft,ChevronRight,ChartNoAxesCombined,Mic,Settings2,Store,Table2,UtensilsCrossed,Volume2,VolumeX} from "lucide-react";
+import type {ReactNode,RefObject} from "react";
+import {Bell,ChevronLeft,ChevronRight,ChartNoAxesCombined,Mic,Settings2,Store,Table2,UtensilsCrossed,Volume2,VolumeX,LoaderCircle} from "lucide-react";
 import {money,shopInitials,type Shop} from "@/lib/menu";
 import type {StaffAccess} from "@/lib/staff-permissions";
 
-export const operationalTabs=["orders","order-list","support"];
-export function AdminWorkspace({shop,access,tab,onSwitch,onAudio,soundMode="voice",pushControl,canOrders,canTables,pendingCount,supportCount,children}:{shop:Shop;access:StaffAccess|null;tab:string;onSwitch:(tab:string)=>void;onAudio:()=>void;onListen:()=>void;soundReady:boolean;soundMode?:"voice"|"chime"|"silent";pushControl?:ReactNode;canOrders:boolean;canTables:boolean;pendingCount:number;supportCount:number;children:ReactNode}){
- const workspace=useRef<HTMLElement>(null);
- const scroller=useRef<HTMLDivElement>(null);
+function useAdminViewport(workspace:RefObject<HTMLElement|null>){
  useEffect(()=>{
   const shell=workspace.current?.closest<HTMLElement>('.app-shell');
   if(!shell)return;
@@ -21,16 +18,35 @@ export function AdminWorkspace({shop,access,tab,onSwitch,onAudio,soundMode="voic
   };
   update();
   window.addEventListener('resize',update);
+  window.addEventListener('pageshow',update);
   viewport?.addEventListener('resize',update);
   viewport?.addEventListener('scroll',update);
   return()=>{
    window.removeEventListener('resize',update);
+   window.removeEventListener('pageshow',update);
    viewport?.removeEventListener('resize',update);
    viewport?.removeEventListener('scroll',update);
    shell.style.removeProperty('--aw-viewport-height');
    shell.style.removeProperty('--aw-viewport-top');
   };
  },[]);
+}
+
+export function AdminStartup(){
+ const workspace=useRef<HTMLElement>(null);
+ useAdminViewport(workspace);
+ return <section ref={workspace} className="admin-workspace aw-startup" aria-busy="true" aria-label="Đang mở quản trị cửa hàng">
+  <header className="aw-header"><strong>Quản trị cửa hàng</strong><LoaderCircle size={20} className="spin"/></header>
+  <div className="aw-content"><p role="status">Đang kết nối và kiểm tra tài khoản…</p><div className="aw-startup-grid" aria-hidden="true">{[1,2,3,4].map(id=><div key={id}/>)}</div></div>
+  <nav className="aw-nav" aria-label="Điều hướng đang tải">{[{name:"Bàn",icon:Table2},{name:"Đơn món",icon:UtensilsCrossed},{name:"Hỗ trợ",icon:Bell},{name:"Cài đặt",icon:Settings2}].map(item=><button type="button" disabled key={item.name}><item.icon size={24}/><span>{item.name}</span></button>)}</nav>
+ </section>;
+}
+
+export const operationalTabs=["orders","order-list","support"];
+export function AdminWorkspace({shop,access,tab,onSwitch,onAudio,soundMode="voice",pushControl,canOrders,canTables,pendingCount,supportCount,children}:{shop:Shop;access:StaffAccess|null;tab:string;onSwitch:(tab:string)=>void;onAudio:()=>void;onListen:()=>void;soundReady:boolean;soundMode?:"voice"|"chime"|"silent";pushControl?:ReactNode;canOrders:boolean;canTables:boolean;pendingCount:number;supportCount:number;children:ReactNode}){
+ const workspace=useRef<HTMLElement>(null);
+ const scroller=useRef<HTMLDivElement>(null);
+ useAdminViewport(workspace);
  useEffect(()=>{scroller.current?.scrollTo({top:0,behavior:"instant"});},[tab]);
  const settings=!operationalTabs.includes(tab);
  return <section ref={workspace} className="admin-workspace" aria-label={shop.name+" · Quản trị cửa hàng"}>

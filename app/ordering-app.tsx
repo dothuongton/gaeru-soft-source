@@ -37,7 +37,7 @@ import type {Category,MenuItem,Promotion,DiningTable,Shop,CartLine,Order,OrderSt
 import "./interface-theme.css";
 import "./responsive-enhancements.css";
 import "./customer-order-flow.css";
-import {AdminWorkspace,AdminSettingsHome,AdminBack,operationalTabs} from "./admin-workspace";
+import {AdminStartup,AdminWorkspace,AdminSettingsHome,AdminBack,operationalTabs} from "./admin-workspace";
 import "./admin-workspace.css";
 
 type View="menu"|"orders"|"about"|"admin";
@@ -454,7 +454,7 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
   }catch(e){setMutationError((e as Error).message);notify((e as Error).message);if(e instanceof ApiError&&e.status===403)void reload(true);return false;}finally{workingRef.current=false;setWorking(false);}
  }
  async function sessionAction(id:string,action:"approve"|"reject"|"close"){return mutate("session",{id,action},action==="approve"?"Đã mở bàn. Máy của khách có thể gọi món.":action==="reject"?"Đã từ chối yêu cầu. Bàn sẵn sàng nhận khách mới.":"Đã đóng bàn. Quyết toán và lịch sử lượt khách đã được lưu trong mục Doanh thu.");}
- if(!ready)return <div className="admin-loading"><LoaderCircle className="spin"/>Đang mở cửa hàng…</div>;
+ if(!ready)return <AdminStartup/>;
  if(!staff&&!access?.authenticated)return <SignInForm onAuthenticated={async()=>{const d=await api<{access:StaffAccess}>("account");onAccessChange(d.access);}}/>;
  if(!staff)return <main className="connection-error"><StoreSwitcher access={access}/><Store size={38}/><h1>{access?.authenticated?access.account?.status==="suspended"?"Tài khoản đã tạm khóa":"Tài khoản chưa được cấp quyền":"Khu vực dành cho nhân viên"}</h1><p>{access?.authenticated?<>{access.email}<br/>Liên hệ quản trị để được cấp hoặc mở lại quyền truy cập bằng đúng email này.</>:"Đăng nhập bằng tài khoản được quản trị cấp quyền để sử dụng các chức năng phục vụ quán."}</p>{access?.authenticated?<><button className="primary" onClick={()=>void onMenuRefresh().catch(error=>notify((error as Error).message))}><RefreshCw size={17}/>Kiểm tra lại quyền</button><button type="button" className="secondary" onClick={async()=>{try{await api("auth/logout",{method:"POST"});}catch{}window.location.href=withStore("/?view=admin&tab=accounts");}}><LogOut size={17}/>Đăng xuất để đổi tài khoản</button></>:<a className="primary" href={"/signin?returnTo="+encodeURIComponent(withStore("/?view=admin"))}><LogIn size={18}/>Đăng nhập quản trị</a>}</main>;
 

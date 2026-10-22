@@ -207,3 +207,13 @@ test("installed staff entry and sign-in redirects retain admin view and store",(
  for(const value of [null,"https://outside.test/","//outside.test/","/\\outside.test/","/signin"]){assert.equal(staffReturnUrl(value),"/?view=admin");}
  assert.throws(()=>staffManifest("//outside.test"));
 });
+
+
+test("initial staff HTML has a neutral stable shell and no protected data",()=>{
+ const {AdminStartup}=load("app/admin-workspace.tsx");
+ const html=render(AdminStartup,{});
+ assert.match(html,/aria-busy="true"/);
+ assert.deepEqual(buttons(html.match(/<nav[\s\S]*?<\/nav>/)[0]),["Bàn","Đơn món","Hỗ trợ","Cài đặt"]);
+ assert.equal((html.match(/disabled/g)||[]).length,4);
+ assert.doesNotMatch(html,/Bàn 01|0 ₫|customer_name/);
+});

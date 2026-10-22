@@ -305,7 +305,7 @@ export async function dispatchStaffPush(params: {
                 method: "POST",
                 headers: payload.headers,
                 body: payload.body,
-                redirect: "error",
+                redirect: "manual",
                 signal: AbortSignal.timeout(10000),
               });
 
@@ -402,7 +402,7 @@ export async function sendTestPush(params: {
         method: "POST",
         headers: payload.headers,
         body: payload.body,
-        redirect: "error",
+        redirect: "manual",
         signal: AbortSignal.timeout(10000),
       });
 

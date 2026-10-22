@@ -271,6 +271,7 @@ test("Push notification dispatch enforces permissions and protects customer priv
   const sent = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
+    assert.equal(options.redirect,"manual","Workers supports manual redirects, never error; push must not follow redirects");
     sent.push({ url, body: new TextDecoder().decode(options.body) });
     return { ok: true, status: 200 };
   };
@@ -416,7 +417,7 @@ test("test push reports provider VAPID errors without leaking endpoint or creden
  environment.DB=d1(sqlite);
  await getStoreDb().inStore("main",()=>subscribeStaffDevice({userId:"test-error",deviceId:"device-error",endpoint:"https://fcm.googleapis.com/fcm/send/private-endpoint",p256dh:"A".repeat(87),auth:"B".repeat(22)}));
  const previous=globalThis.fetch;
- globalThis.fetch=async()=>Response.json({reason:"BadJwtToken"},{status:403});
+ globalThis.fetch=async(_url,options)=>{assert.equal(options.redirect,"manual");return Response.json({reason:"BadJwtToken"},{status:403});};
  try{
   const result=await getStoreDb().inStore("main",()=>sendTestPush({userId:"test-error",deviceId:"device-error",storeId:"main"}));
   assert.equal(result.success,false);
