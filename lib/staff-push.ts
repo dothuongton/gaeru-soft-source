@@ -39,9 +39,9 @@ export function getVapidConfig(): {
   privateKey?: string;
   subject?: string;
 } {
-  const publicKey = env.VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
-  const privateKey = env.VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY;
-  const subject = env.VAPID_SUBJECT || process.env.VAPID_SUBJECT || "mailto:support@gaeru.com";
+  const publicKey = (env.VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY)?.trim();
+  const privateKey = (env.VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY)?.trim();
+  const subject = (env.VAPID_SUBJECT || process.env.VAPID_SUBJECT || "mailto:support@gaeru.com").trim();
 
   if (publicKey && privateKey) {
     return { enabled: true, publicKey, privateKey, subject };
@@ -371,6 +371,7 @@ export async function sendTestPush(params: {
   };
 
   let delivered = 0;
+  let failure="Chưa gửi được thông báo. Hãy thử lại khi kết nối ổn định.";
   const staleIds: string[] = [];
 
   for (const sub of subs.results) {
@@ -413,9 +414,19 @@ export async function sendTestPush(params: {
           .run();
       } else if (response.status === 404 || response.status === 410) {
         staleIds.push(sub.id);
+        failure="Đăng ký trên thiết bị đã hết hạn. Tắt rồi bật lại thông báo đẩy trên máy này.";
+      } else {
+        failure=response.status===401||response.status===403
+          ?"Dịch vụ push từ chối khóa VAPID ("+response.status+"). Kiểm tra cặp khóa trên máy chủ; nếu đã đổi khóa, tắt rồi bật lại push trên thiết bị."
+          :"Dịch vụ push từ chối yêu cầu ("+response.status+"). Vui lòng kiểm tra cấu hình máy chủ.";
+        let reason="";
+        try{const body=await response.json() as {reason?:unknown};if(typeof body.reason==="string"&&/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(body.reason))reason=body.reason;}catch{/* Providers may return a non-JSON error. */}
+        if(reason)failure+=" Mã lỗi: "+reason+".";
+        console.warn("Test push rejected",response.status,reason);
       }
     } catch (err) {
-      console.warn("Test push error:", err);
+      failure=err instanceof Error&&err.name==="TimeoutError"?"Dịch vụ push phản hồi quá chậm. Vui lòng thử lại.":"Không tạo hoặc gửi được thông báo. Kiểm tra cặp khóa VAPID và kết nối máy chủ.";
+      console.warn("Test push error:", err instanceof Error?err.name:"unknown");
     }
   }
 
@@ -425,5 +436,5 @@ export async function sendTestPush(params: {
     }
   }
 
-  return { success: delivered > 0, delivered };
+  return { success: delivered > 0, delivered,...(delivered?{}:{error:failure}) };
 }

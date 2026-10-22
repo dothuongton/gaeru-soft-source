@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { ArrowRight, CircleAlert, CheckCircle2, KeyRound, LoaderCircle, LogIn, QrCode } from "lucide-react";
+import type {CSSProperties} from "react";
+import {defaultShop,shopInitials,type Shop} from "@/lib/menu";
+import {withStore} from "@/lib/store-links";
+import {normalizeThemeSettings,readableForeground,DEFAULT_THEME_SETTINGS} from "@/lib/theme-settings";
+import { useEffect, useState } from "react";
+import { CircleAlert, CheckCircle2, KeyRound, LoaderCircle, LogIn } from "lucide-react";
 import {staffReturnUrl} from "@/lib/staff-return-url";
 import { api } from "@/lib/api-client";
 import "./signin/signin.css";
 
 export function SignInForm({onAuthenticated}:{onAuthenticated?:()=>void|Promise<void>}) {
+  const [branding,setBranding]=useState<Shop>(defaultShop);
+  const [theme,setTheme]=useState(DEFAULT_THEME_SETTINGS);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [returnTo, setReturnTo] = useState("/?view=admin");
@@ -21,6 +27,11 @@ export function SignInForm({onAuthenticated}:{onAuthenticated?:()=>void|Promise<
     const params = new URLSearchParams(window.location.search);
     const target = staffReturnUrl(params.get("returnTo") || params.get("return_to"));
     setReturnTo(target);
+    let cancelled=false;
+    const store=params.get("store")||new URL(target,window.location.origin).searchParams.get("store")||"main";
+    const controller=new AbortController();
+    void fetch(withStore("/api/shop-info",store),{credentials:"same-origin",signal:controller.signal}).then(async response=>{if(!response.ok)return;const data=await response.json() as {shop:Shop;themeSettings:unknown};if(!cancelled){setBranding(data.shop);setTheme(normalizeThemeSettings(data.themeSettings));}}).catch(()=>{});
+    return()=>{cancelled=true;controller.abort();};
   }, []);
 
   async function handleLogin(e: React.FormEvent) {
@@ -81,13 +92,13 @@ export function SignInForm({onAuthenticated}:{onAuthenticated?:()=>void|Promise<
   }
 
   return (
-    <div className="signin-container">
+    <div className="signin-container" style={{"--signin-accent":theme.accentColor,"--signin-ink":theme.textColor,"--signin-on-accent":readableForeground(theme.accentColor)} as CSSProperties}>
       <div className="signin-card">
         <div className="signin-header">
           <div className="signin-logo">
-            <QrCode size={28} />
+            {branding.logo?<img src={branding.logo} alt=""/>:<span>{shopInitials(branding.name)}</span>}
           </div>
-          <h1 className="signin-title">GAERU Soft</h1>
+          <h1 className="signin-title">{branding.name}</h1>
           <p className="signin-subtitle">
             {mustChange ? "Đặt lại mật khẩu mới" : "Đăng nhập quản trị cửa hàng & nền tảng"}
           </p>

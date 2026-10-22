@@ -13,11 +13,12 @@ export async function ensureMainStore(){
  await db.prepare("INSERT OR IGNORE INTO stores (id,name,admin_email,request_id,created_by,created_at) VALUES ('main','Mộc','','legacy-main','legacy',0)").run();
 }
 export async function resolveStore(request:Request){
- await ensureMainStore();const params=new URL(request.url).searchParams;
+ const params=new URL(request.url).searchParams;
  if(params.getAll("store").length>1)throw new OrderError("Liên kết chứa nhiều cửa hàng.");
  const id=params.get("store")??"main";
  if(!/^[a-z0-9][a-z0-9-]{0,47}$/.test(id))throw new OrderError("Mã cửa hàng không hợp lệ.",404);
- const store=await rootDatabase().prepare("SELECT * FROM stores WHERE id = ?").bind(id).first<StoreRow>();
+ let store=await rootDatabase().prepare("SELECT * FROM stores WHERE id = ?").bind(id).first<StoreRow>();
+ if(!store&&id==="main"){await ensureMainStore();store=await rootDatabase().prepare("SELECT * FROM stores WHERE id = ?").bind(id).first<StoreRow>();}
  if(!store)throw new OrderError("Không tìm thấy cửa hàng. Vui lòng kiểm tra lại liên kết.",404);return store;
 }
 export async function listStores(request:Request){

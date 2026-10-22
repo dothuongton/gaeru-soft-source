@@ -3766,3 +3766,19 @@ test("an empty store keeps preview and administration available after deleting a
  const recreated=await storeCall(store.id,"PATCH","admin/table",{create:true,requestId:crypto.randomUUID(),name:"Bàn đầu tiên",zone:"Sảnh"},{staff:true});
  assert.equal(recreated.status,201,JSON.stringify(recreated.data));
 });
+
+test("compact admin entry omits menu payload while retaining operational data and branding",async()=>{
+ const full=await call("GET","admin",undefined,{staff:true});
+ const compact=await call("GET","admin?section=board",undefined,{staff:true});
+ assert.equal(compact.status,200,JSON.stringify(compact.data));
+ assert.equal(compact.data.compact,true);
+ assert.deepEqual(compact.data.items,[]);
+ assert.deepEqual(compact.data.tables,full.data.tables);
+ assert.deepEqual(compact.data.orders,full.data.orders);
+ assert.equal(compact.data.shop.name,full.data.shop.name);
+ assert.ok(!compact.data.shop.logo||compact.data.shop.logo.startsWith("/api/branding-icon?"));
+ const publicInfo=await call("GET","shop-info");
+ assert.equal(publicInfo.status,200);
+ assert.equal(publicInfo.data.shop.name,full.data.shop.name);
+ assert.equal(publicInfo.data.access,undefined);
+});

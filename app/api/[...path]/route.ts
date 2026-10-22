@@ -9,7 +9,7 @@ import {transferTable} from "@/lib/table-transfer-server";
 import {getDisplaySettings,saveDisplaySettings} from "@/lib/display-settings-server";
 import {getThemeSettings,saveThemeSettings} from "@/lib/theme-settings-server";
 import {readQrEntry} from "@/lib/qr-entry";
-import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories} from "@/lib/menu";
+import {validateExtras,validateShopLogo,shopIconSvg,calculateOrder,validatePromotion,canTransition,checkedText,OrderError,categories,brandingRevision} from "@/lib/menu";
 import type {OrderStatus} from "@/lib/menu";
 import {getStaffAccess,updateOwnProfile,listStaffAccounts,createStaffAccount,updateStaffAccount} from "@/lib/staff-access";
 import {hasPermission,type Permission} from "@/lib/staff-permissions";
@@ -48,6 +48,7 @@ async function handleScoped(request:Request){
   const allow=(permission:Permission)=>{if(!access||!hasPermission(access,permission))throw new OrderError("Bạn chưa được cấp quyền thực hiện chức năng này.",403);};
   await seed();const db=database();
   if(request.method==="GET"){
+   if(path==="shop-info"){const [shop,themeSettings]=await Promise.all([getShop(),getThemeSettings()]);return json({shop:{...shop,logo:shop.logo?"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(shop):""},themeSettings});}
    if(path==="branding-icon"){const shop=await getShop();if(shop.logo){const binary=atob(shop.logo.split(",")[1]);return new Response(Uint8Array.from(binary,c=>c.charCodeAt(0)),{headers:{"Content-Type":"image/png","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});}return new Response(shopIconSvg(shop.name),{headers:{"Content-Type":"image/svg+xml","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});}
    if(path==="account")return json({access});
    if(path==="stores")return json(await listStores(request));
@@ -65,7 +66,10 @@ async function handleScoped(request:Request){
    if(path==="admin/table-payment"){allow("payments.collect");return json(await getTablePaymentQuote(url.searchParams));}
    if(path==="admin/revenue/settlements"){allow("revenue.view");return json(await listSettlements(url.searchParams));}
    if(path.startsWith("admin/revenue/settlements/")&&!path.slice("admin/revenue/settlements/".length).includes("/")){allow("revenue.view");return json(await getSettlement(path.slice("admin/revenue/settlements/".length)));}
-   if(path==="admin")return json(await adminDashboard(access!));
+   if(path==="admin"){
+    const compact=url.searchParams.get("section")==="board",data=await adminDashboard(access!,!compact);
+    return json({...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop});
+   }
    return json({error:"Không tìm thấy nội dung."},404);
   }
   const b=await readBody(request);

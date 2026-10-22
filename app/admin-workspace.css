@@ -246,3 +246,23 @@ body:has(.admin-workspace) .pwa-update-banner>button{flex-shrink:0;min-height:44
  .app-shell[data-view="admin"] .aw-nav>button svg{width:24px;height:24px}
 }
 .app-shell[data-view="admin"]>.signin-container{height:100dvh;overflow:auto}
+
+.app-shell .toast.error{background:#7f1d1d!important;color:#fff!important;border-color:#991b1b!important}
+.app-shell .toast.error .toast-icon{color:#fff!important}
+@media(max-width:767px){
+ .app-shell[data-view="admin"] .aw-content{padding:16px 12px 24px}
+ .app-shell[data-view="admin"] .aw-table-tile{height:156px;min-height:0;padding:13px;border-radius:12px}
+ .app-shell[data-view="admin"] .aw-table-tile h3{font-size:18px}
+ .app-shell[data-view="admin"] .table-matrix-filter{height:68px;min-height:68px;gap:2px;padding:6px 4px}
+ .app-shell[data-view="admin"] .aw-board-heading{margin-bottom:14px}
+ .app-shell[data-view="admin"] .aw-header-actions .aw-icon,.app-shell[data-view="admin"] .aw-push-control>button,.app-shell[data-view="admin"] .aw-push-control>div>button{width:44px;min-width:44px}
+ .app-shell[data-view="admin"] .aw-push-control [role="menu"]{position:fixed;top:calc(78px + env(safe-area-inset-top));right:12px;max-width:calc(100vw - 24px)}
+}
+@media(max-width:360px){
+ .app-shell[data-view="admin"] .aw-content{padding-left:10px;padding-right:10px}
+ .app-shell[data-view="admin"] .aw-table-heading h2{font-size:19px}
+ .app-shell[data-view="admin"] .aw-brand{max-width:calc(100% - 146px)}
+ .app-shell[data-view="admin"] .aw-brand small{font-size:10px}
+ .app-shell[data-view="admin"] .aw-table-tile h3{font-size:17px}
+ .app-shell[data-view="admin"] .aw-table-tile{height:150px;padding:10px}
+}

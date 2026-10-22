@@ -6,14 +6,14 @@ import {publicTransfer} from "./table-transfer-server";
 import {hasPermission,type StaffAccess} from "./staff-permissions";
 
 /** Read the board in one transaction, limiting each dataset to granted duties. */
-export async function adminDashboard(access:StaffAccess){
+export async function adminDashboard(access:StaffAccess,includeMenu=true){
  const operational=hasPermission(access,"orders.view"),revenue=hasPermission(access,"revenue.view"),tables=hasPermission(access,"tables.manage");
  if(operational)await ensureLegacySessions();
  const db=database(),dayStart=Math.floor((Date.now()+25200000)/86400000)*86400000-25200000;
  const liveOrders="status IN ('new','preparing','ready') OR (paid = 0 AND status != 'cancelled') OR dining_session_id IN (SELECT id FROM table_sessions WHERE status IN ('pending','active'))";
  const withHistory=revenue?" OR id IN (SELECT id FROM orders WHERE status = 'cancelled' OR (status = 'served' AND paid = 1) ORDER BY created_at DESC LIMIT 200)":"";
  const [items,shop,displaySettings,themeSettings,board]=await Promise.all([
-  hasPermission(access,"menu.manage")?getMenu():Promise.resolve([]),getShop(),getDisplaySettings(),getThemeSettings(),db.batch([
+  includeMenu&&hasPermission(access,"menu.manage")?getMenu():Promise.resolve([]),getShop(),getDisplaySettings(),getThemeSettings(),db.batch([
    db.prepare(operational||revenue?"SELECT id,name,zone"+(tables?",token":"")+" FROM dining_tables ORDER BY CAST(id AS INTEGER)":"SELECT id,name,zone FROM dining_tables WHERE 0"),
    db.prepare(operational?"SELECT * FROM orders WHERE "+liveOrders+withHistory+" ORDER BY created_at DESC":"SELECT * FROM orders WHERE 0"),
    db.prepare(operational?"SELECT * FROM service_requests WHERE status = 'open' ORDER BY created_at DESC":"SELECT * FROM service_requests WHERE 0"),

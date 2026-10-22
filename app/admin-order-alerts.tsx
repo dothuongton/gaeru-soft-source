@@ -133,7 +133,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     return mediaChime.current?.play() ?? Promise.resolve(false);
   }, [prepareAudio]);
 
-  const speak = useCallback((text: string, alert?: AdminAlert, withChime = true) => {
+  const speak = useCallback((text: string, alert?: AdminAlert, withChime = false) => {
     if (!mounted.current || !visibleRef.current || (alert && !announcements.current.canBegin(alert))) return;
     stopSpeech();
     const attempt = alert ? announcements.current.begin(alert) : null;
@@ -155,6 +155,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
       if (played && alert && mounted.current && epoch === speechEpoch.current) chimed.current.add(alert.id);
     });
     const finishFallback = () => {
+      if(!withChime){finishAttempt(false);audioBlocked.current=true;return;}
       void chime().then(delivered => {
         if (!mounted.current || epoch !== speechEpoch.current) return;
         finishAttempt(false);
@@ -164,7 +165,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     };
     if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
       finishFallback();
-      setVoiceNotice("Trình duyệt chưa hỗ trợ đọc tên bàn; hệ thống phát chuông thông báo.");
+      setVoiceNotice("Trình duyệt chưa hỗ trợ đọc giọng nói. Bạn có thể chọn chế độ Âm báo.");
       return;
     }
     const synth = window.speechSynthesis;
@@ -174,7 +175,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
       speechReady.current = false;
       speechNeedsGesture.current = false;
       finishFallback();
-      setVoiceNotice("Thiết bị chưa có giọng tiếng Việt; hệ thống phát chuông thông báo cho bàn và đơn mới.");
+      setVoiceNotice("Thiết bị chưa có giọng tiếng Việt. Hãy cài giọng tiếng Việt trong Trợ năng của iPhone hoặc chọn Âm báo.");
       reportReadiness();
       return;
     }
@@ -234,8 +235,8 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
         }
         speechReady.current = false;
         speechNeedsGesture.current = event.error === "not-allowed";
-        setVoiceNotice("Không phát được giọng đọc (" + event.error + "). Hệ thống dùng chuông báo.");
-        void chime();
+        setVoiceNotice("Không phát được giọng đọc (" + event.error + "). Kiểm tra giọng tiếng Việt trên thiết bị hoặc chọn Âm báo.");
+        if(withChime)void chime();
         reportReadiness();
       };
       const startSpeech = () => {
@@ -265,7 +266,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
           speechReady.current=false;
           speechNeedsGesture.current=true;
           setVoiceNotice("Chưa đọc được thông báo. Chạm nút phát thông báo để kích hoạt lại.");
-          void chime();
+          if(withChime)void chime();
           reportReadiness();
         }
       };
@@ -278,7 +279,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
       speechReady.current = false;
       speechNeedsGesture.current = true;
       setVoiceNotice("Chưa phát được giọng đọc. Bấm Thử giọng đọc để kiểm tra.");
-      void chime();
+      if(withChime)void chime();
       reportReadiness();
     }
   }, [chime, continueAudio, reportReadiness, stopSpeech]);
@@ -313,11 +314,19 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     audioBlocked.current = false;
     const current = audioQueue.current.first();
     if (current && announcements.current.canBegin(current)) {
-      speak(adminAlertSpeech(current), current, true);
+      speak(adminAlertSpeech(current), current, false);
     } else {
-      speak("Đây là giọng đọc thông báo. Bàn số một cần hỗ trợ.", undefined, true);
+      speak("Đây là giọng đọc thông báo. Bàn số một cần hỗ trợ.", undefined, false);
     }
   }, [prepareAudio, speak, stopSpeech,chime]);
+
+  const testSound=useCallback(()=>{
+    if(modeRef.current==="silent")return;
+    prepareAudio();
+    if(modeRef.current==="chime"){void chime();return;}
+    audioBlocked.current=false;
+    speak("Đây là giọng đọc thông báo. Bàn số một cần hỗ trợ.",undefined,false);
+  },[prepareAudio,chime,speak]);
 
   const observeDashboard = useCallback((orders: Order[], sessions: OpeningSession[], calls: ServiceRequest[] = []) => {
     const permittedOrders = scope.current.orders ? orders : [];
@@ -336,7 +345,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     const pending = pendingAdminAlerts([...audioQueue.current.snapshot(), ...arrivals], permittedOrders, permittedSessions, permittedCalls);
     audioQueue.current.reconcile(pending);
     // If speech awaits permission, new arrivals can still use an available chime.
-    if (audioBlocked.current && arrivals.length) {
+    if (modeRef.current==="chime" && audioBlocked.current && arrivals.length) {
       void chime().then(played => {
         if (played && mounted.current) for (const alert of arrivals) chimed.current.add(alert.id);
       });
@@ -454,7 +463,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
   const audioNotice = [mediaNotice, speechNotice].filter(Boolean).join(" ");
   const chooseVoice = (id: string) => {stopSpeech(); selectedVoiceRef.current = id; setSelectedVoice(id); speechReady.current = false; setVoiceNotice("Đã chọn giọng. Chạm Thử giọng đọc để kiểm tra."); reportReadiness();};
   const testChime = () => {stopSpeech(); setMediaNotice("Đang thử chuông…"); void chime();};
-  return {soundMode,setSoundMode,active: visible ? active : null, durationMs, waiting: Math.max(0, queue.length - 1), soundEnabled: soundMode!=="silent", soundReady: readiness.ready, soundNeedsGesture: readiness.needsGesture, audioNotice, toggleSound: activateSound, testSound: activateSound, testChime, voiceOptions, selectedVoice, chooseVoice, voiceSummary, observeDashboard, restrictAlerts, resetAlerts, observeOrders, chime, dismiss};
+  return {soundMode,setSoundMode,active: visible ? active : null, durationMs, waiting: Math.max(0, queue.length - 1), soundEnabled: soundMode!=="silent", soundReady: readiness.ready, soundNeedsGesture: readiness.needsGesture, audioNotice, toggleSound: activateSound, testSound, testChime, voiceOptions, selectedVoice, chooseVoice, voiceSummary, observeDashboard, restrictAlerts, resetAlerts, observeOrders, chime, dismiss};
 }
 
 export function NewOrderPopup({alert, waiting, durationMs = ADMIN_ALERT_DURATION_MS, onDismiss, onOpenTable}: {alert: AdminAlert | null; waiting: number; durationMs?: number; onDismiss: () => void; onOpenTable: (tableId: string) => void}) {

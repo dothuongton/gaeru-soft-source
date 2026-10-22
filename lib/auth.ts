@@ -271,10 +271,10 @@ export async function resolveIdentity(request: Request): Promise<AuthIdentity | 
 
     const session = await db
       .prepare(
-        "SELECT email, user_id, expires_at, last_seen_at FROM auth_sessions WHERE token_hash = ?"
+        "SELECT s.email,s.user_id,s.expires_at,s.last_seen_at,c.display_name,c.must_change_password FROM auth_sessions s LEFT JOIN auth_credentials c ON c.email=s.email WHERE s.token_hash = ?"
       )
       .bind(tokenHash)
-      .first<{ email: string; user_id: string; expires_at: number; last_seen_at: number }>();
+      .first<{ email: string; user_id: string; expires_at: number; last_seen_at: number;display_name:string|null;must_change_password:number|null }>();
 
     if (!session || session.expires_at <= now) {
       if (session) {
@@ -290,18 +290,11 @@ export async function resolveIdentity(request: Request): Promise<AuthIdentity | 
         .run();
     }
 
-    const cred = await db
-      .prepare(
-        "SELECT display_name, must_change_password FROM auth_credentials WHERE email = ?"
-      )
-      .bind(session.email)
-      .first<{ display_name: string; must_change_password: number }>();
-
     return {
       userId: session.user_id,
       email: session.email,
-      displayName: cred?.display_name || undefined,
-      mustChangePassword: cred?.must_change_password === 1,
+      displayName: session.display_name || undefined,
+      mustChangePassword: session.must_change_password === 1,
     };
   } catch {
     return null;

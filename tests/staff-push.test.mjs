@@ -409,3 +409,19 @@ test("sendTestPush validates endpoint and cleans up 404/410 subscriptions", asyn
     globalThis.fetch = originalFetch;
   }
 });
+
+test("test push reports provider VAPID errors without leaking endpoint or credentials", async () => {
+ const sqlite=new DatabaseSync(":memory:");
+ for(const file of readdirSync(root+"drizzle").filter(x=>x.endsWith(".sql")).sort())sqlite.exec(readFileSync(root+"drizzle/"+file,"utf8"));
+ environment.DB=d1(sqlite);
+ await getStoreDb().inStore("main",()=>subscribeStaffDevice({userId:"test-error",deviceId:"device-error",endpoint:"https://fcm.googleapis.com/fcm/send/private-endpoint",p256dh:"A".repeat(87),auth:"B".repeat(22)}));
+ const previous=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({reason:"BadJwtToken"},{status:403});
+ try{
+  const result=await getStoreDb().inStore("main",()=>sendTestPush({userId:"test-error",deviceId:"device-error",storeId:"main"}));
+  assert.equal(result.success,false);
+  assert.match(result.error,/403/);assert.match(result.error,/BadJwtToken/);
+  assert.doesNotMatch(JSON.stringify(result),/private-endpoint|test_priv/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM staff_push_subscriptions").get().n,1);
+ }finally{globalThis.fetch=previous;}
+});

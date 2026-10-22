@@ -34,15 +34,23 @@ const withTimeout = <T,>(promise: Promise<T>, ms = 5000): Promise<T> => {
   ]);
 };
 
-type PushState = "checking" | "unsupported" | "server_disabled" | "denied" | "ready" | "subscribed";
+function matchesApplicationKey(subscription:PushSubscription,key:string){
+ const saved=subscription.options.applicationServerKey;
+ if(!saved)return false;
+ const expected=urlBase64ToUint8Array(key),bytes=new Uint8Array(saved);
+ return bytes.length===expected.length&&bytes.every((byte,index)=>byte===expected[index]);
+}
 
-export function AdminPushToggle({notify,iconOnly=false}:{notify:(msg:string)=>void;iconOnly?:boolean}){
+type PushState = "checking" | "unsupported" | "server_disabled" | "denied" | "ready" | "subscribed" | "key_changed" | "check_error";
+
+export function AdminPushToggle({notify,iconOnly=false}:{notify:(msg:string,kind?:"success"|"error"|"info")=>void;iconOnly?:boolean}){
  return <span className={iconOnly?"aw-push-control":""}><PushControl notify={notify}/></span>;
 }
-function PushControl({ notify }: { notify: (msg: string) => void }) {
+function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|"info") => void }) {
   const [state, setState] = useState<PushState>("checking");
   const [loading, setLoading] = useState(false);
   const [testTesting, setTestTesting] = useState(false);
+  const [checkRevision,setCheckRevision]=useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [vapidKey, setVapidKey] = useState<string | null>(null);
 
@@ -84,13 +92,14 @@ function PushControl({ notify }: { notify: (msg: string) => void }) {
         const existingSub = await reg.pushManager.getSubscription();
         if (cancelled) return;
 
+        if(existingSub&&!matchesApplicationKey(existingSub,config.vapidPublicKey)){setState("key_changed");return;}
         if (status.subscribed && existingSub) {
           setState("subscribed");
         } else {
           setState("ready");
         }
       } catch {
-        if (!cancelled) setState("ready");
+        if (!cancelled) setState("check_error");
       }
     };
 
@@ -99,7 +108,7 @@ function PushControl({ notify }: { notify: (msg: string) => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [checkRevision]);
 
   const handleSubscribe = async () => {
     if (loading || !vapidKey) return;
@@ -116,6 +125,7 @@ function PushControl({ notify }: { notify: (msg: string) => void }) {
 
       const reg = await withTimeout(navigator.serviceWorker.ready, 5000);
       let sub = await reg.pushManager.getSubscription();
+      if(sub&&!matchesApplicationKey(sub,vapidKey)){await sub.unsubscribe();sub=null;}
 
       if (!sub) {
         const applicationServerKey = urlBase64ToUint8Array(vapidKey);
@@ -207,17 +217,18 @@ function PushControl({ notify }: { notify: (msg: string) => void }) {
       });
 
       if (res.success) {
-        notify("Đã gửi thông báo thử nghiệm thành công!");
+        notify("Dịch vụ push đã nhận yêu cầu. Hãy kiểm tra thông báo trên thiết bị.");
       } else {
-        notify(res.error || "Gửi thử nghiệm không thành công.");
+        notify(res.error || "Gửi thử nghiệm không thành công.","error");
       }
     } catch (err) {
-      notify((err as Error).message || "Lỗi khi gửi thông báo thử nghiệm.");
+      notify((err as Error).message || "Lỗi khi gửi thông báo thử nghiệm.","error");
     } finally {
       setTestTesting(false);
     }
   };
 
+  if(state==="check_error")return <button type="button" className="secondary icon-label" onClick={()=>{setState("checking");setCheckRevision(value=>value+1);}} title="Chưa kiểm tra được cấu hình push. Nhấn để thử lại."><AlertTriangle size={17}/><span>Kiểm tra lại thông báo đẩy</span></button>;
   if (state === "checking") {
     return (
       <button type="button" disabled className="secondary icon-label opacity-70 cursor-wait">
@@ -324,7 +335,7 @@ function PushControl({ notify }: { notify: (msg: string) => void }) {
       title="Bật thông báo đẩy để nhận tin đơn gọi món và khách gọi nhân viên khi không nhìn màn hình."
     >
       {loading ? <LoaderCircle size={17} className="animate-spin text-emerald-600" /> : <Bell size={17} />}
-      <span>Bật thông báo đẩy</span>
+      <span>{state==="key_changed"?"Cập nhật đăng ký thông báo đẩy":"Bật thông báo đẩy"}</span>
     </button>
   );
 }
