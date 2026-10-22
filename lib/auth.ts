@@ -695,12 +695,17 @@ export async function bootstrapOwner(
       : "Quản trị viên";
 
   // Check 5: Resolve user_id
+  const existingCred = await db
+    .prepare("SELECT user_id FROM auth_credentials WHERE email = ?")
+    .bind(email)
+    .first<{ user_id: string }>();
+
   const bound = await db
     .prepare("SELECT user_id FROM staff_owner_bindings WHERE email = ?")
     .bind(email)
     .first<{ user_id: string }>();
 
-  const userId = bound?.user_id || crypto.randomUUID();
+  const userId = existingCred?.user_id || bound?.user_id || crypto.randomUUID();
   const passwordHash = await hashPassword(password);
 
   if (total > 0 && isForceReset) {

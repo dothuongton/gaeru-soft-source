@@ -374,7 +374,7 @@ async function handle(request:Request){
    return handleScoped(request);
   });
  }
- catch(error){if(error instanceof OrderError)return json({error:error.message},error.status);console.error("Store request failed",error instanceof Error?error.message:"Unknown");return json({error:"Chưa kết nối được cửa hàng. Vui lòng thử lại."},500);}
+ catch(error){if(error instanceof OrderError)return json({error:error.message},error.status);console.error("API error",error instanceof Error?error.message:"Unknown",error instanceof Error?error.stack:"");return json({error:error instanceof Error?error.message:"Chưa kết nối được với hệ thống. Vui lòng thử lại."},500);}
 }
 export const GET=handle;
 export const POST=handle;
