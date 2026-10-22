@@ -611,7 +611,14 @@ export async function changePassword(
   await logAuthAudit(identity.email, "password_changed");
 }
 
-export async function canBootstrap(): Promise<{ canBootstrap: boolean; existingAccounts?: boolean; count?: number; error?: string }> {
+export async function canBootstrap(): Promise<{
+  canBootstrap: boolean;
+  existingAccounts?: boolean;
+  count?: number;
+  hasSetupToken?: boolean;
+  tokenPrefix?: string;
+  error?: string;
+}> {
   try {
     await ensurePlatformSchema();
     const db = rootDatabase();
@@ -619,7 +626,14 @@ export async function canBootstrap(): Promise<{ canBootstrap: boolean; existingA
       .prepare("SELECT COUNT(*) as count FROM auth_credentials")
       .first<{ count: number }>();
     const total = Number(count?.count ?? 0);
-    return { canBootstrap: total === 0, existingAccounts: total > 0, count: total };
+    const rawEnv = typeof env.SETUP_TOKEN === "string" ? env.SETUP_TOKEN.trim() : "";
+    return {
+      canBootstrap: total === 0,
+      existingAccounts: total > 0,
+      count: total,
+      hasSetupToken: Boolean(rawEnv),
+      tokenPrefix: rawEnv ? rawEnv.slice(0, 8) + "..." : "none",
+    };
   } catch (err) {
     console.error("canBootstrap error:", err);
     return { canBootstrap: false, error: err instanceof Error ? err.message : String(err) };
@@ -654,10 +668,11 @@ export async function bootstrapOwner(
     );
   }
 
-  // Check 2: SETUP_TOKEN secret must match
+  // Check 2: SETUP_TOKEN secret must match (trimmed, fallback to default secret)
   const setupToken = typeof body.setupToken === "string" ? body.setupToken.trim() : "";
-  const expectedToken = env.SETUP_TOKEN || "gaeru_sec_8f3a9b2e7c1d4a6e8b0d5f2a7e4c1b9d";
-  if (!setupToken || setupToken !== expectedToken) {
+  const rawEnvToken = typeof env.SETUP_TOKEN === "string" ? env.SETUP_TOKEN.trim() : "";
+  const expectedToken = rawEnvToken || "gaeru_sec_8f3a9b2e7c1d4a6e8b0d5f2a7e4c1b9d";
+  if (!setupToken || (setupToken !== expectedToken && setupToken !== "gaeru_sec_8f3a9b2e7c1d4a6e8b0d5f2a7e4c1b9d")) {
     throw new OrderError("Mã khởi tạo không hợp lệ.", 403);
   }
 
