@@ -1,6 +1,6 @@
 import {withStore} from "./store-links";
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number | null, public readonly uncertain: boolean) {
+  constructor(message: string, public readonly status: number | null, public readonly uncertain: boolean, public readonly retryAfterMs: number | null = null) {
     super(message);
     this.name = "ApiError";
   }
@@ -28,7 +28,13 @@ export async function api<T = {ok: boolean}>(path: string, options: RequestInit 
     let data: T & {error?: string};
     try {data = await response.json();}
     catch {throw new ApiError("Chưa đọc được phản hồi của quán. Vui lòng kiểm tra lại kết quả.", response.status, true);}
-    if (!response.ok) throw new ApiError(data?.error || "Chưa thực hiện được. Vui lòng thử lại.", response.status, response.status >= 500 || response.status === 408);
+    let retryAfterMs: number | null = null;
+    const retryHeader = response.headers.get("Retry-After");
+    if (retryHeader) {
+      const sec = parseInt(retryHeader, 10);
+      if (!Number.isNaN(sec) && sec > 0) retryAfterMs = sec * 1000;
+    }
+    if (!response.ok) throw new ApiError(data?.error || "Chưa thực hiện được. Vui lòng thử lại.", response.status, response.status >= 500 || response.status === 408, retryAfterMs);
     if (!data || typeof data !== "object") throw new ApiError("Phản hồi của quán chưa đầy đủ. Vui lòng kiểm tra lại kết quả.", response.status, true);
     const etag=response.headers.get("ETag");
     if(conditional&&etag&&epoch===snapshotEpoch){if(snapshots.size>=8)snapshots.delete(snapshots.keys().next().value!);snapshots.set(url,{etag,data:structuredClone(data)});}

@@ -24,6 +24,7 @@ import {DEFAULT_THEME_SETTINGS,normalizeThemeSettings,readableForeground,accentT
 import {DEFAULT_DISPLAY_SETTINGS,normalizeDisplaySettings,displayScale,type DisplaySettings} from "@/lib/display-settings";
 import {readSessionDraft,sessionDraftKey} from "@/lib/session-draft";
 import {api,ApiError} from "@/lib/api-client";
+import {AdaptiveScheduler} from "@/lib/adaptive-polling";
 import {mergeCartLine,normalizeItemChoice,prepareOrderSubmission,orderRequestBody,readPendingOrder,storePendingOrder,type PendingOrder,type OrderAction} from "@/lib/customer-order";
 import {readQrEntry} from "@/lib/qr-entry";
 import type {TableTransfer} from "@/lib/table-transfer-types";
@@ -181,9 +182,26 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
   try{const d=await api<{orders:Order[]}>("orders?table="+encodeURIComponent(table.token)+"&session="+encodeURIComponent(id));if(stillCurrent()){setOrders(d.orders);setSyncError("");}}
   catch(e){if(stillCurrent()){setSyncError((e as Error).message);void loadMenu().catch(()=>{});}}
  },[table?.token,table?.id,connection.state,connection.session?.id,loadMenu]);
- useEffect(()=>{if(!ready||view==="admin")return;void loadOrders();const interval=setInterval(()=>{if(document.visibilityState==="visible")void loadOrders();},7000);return()=>clearInterval(interval);},[ready,view,loadOrders]);
  const canOrder=ready&&connection.state==="active"&&!!connection.session;
- useEffect(()=>{if(!ready||view==="admin")return;const refresh=()=>{if(document.visibilityState==="visible")void loadMenu().catch(()=>{});};const interval=setInterval(refresh,canOrder?5000:20000);document.addEventListener("visibilitychange",refresh);return()=>{clearInterval(interval);document.removeEventListener("visibilitychange",refresh);};},[ready,view,loadMenu,canOrder]);
+ const ordersPollerRef=useRef<AdaptiveScheduler|null>(null);
+ const menuPollerRef=useRef<AdaptiveScheduler|null>(null);
+ useEffect(()=>{
+  if(!ready||view==="admin")return;
+  ordersPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadOrders();},baseIntervalMs:10000,maxIntervalMs:30000,pauseWhenHidden:true});
+  ordersPollerRef.current.start();
+  return()=>{ordersPollerRef.current?.stop();ordersPollerRef.current=null;};
+ },[ready,view,loadOrders]);
+ useEffect(()=>{
+  if(!ready||view==="admin")return;
+  const baseInterval=canOrder?10000:30000;
+  if(!menuPollerRef.current){
+   menuPollerRef.current=new AdaptiveScheduler({task:async()=>{await loadMenu().catch(()=>{});},baseIntervalMs:baseInterval,maxIntervalMs:30000,pauseWhenHidden:true});
+   menuPollerRef.current.start();
+  }else{
+   menuPollerRef.current.setBaseInterval(baseInterval);
+  }
+  return()=>{menuPollerRef.current?.stop();menuPollerRef.current=null;};
+ },[ready,view,loadMenu,canOrder]);
  async function requestTable(customerName:string){if(!table||!ready)throw new Error("Vui lòng tải lại mã QR tại bàn.");const d=await api<{connection:Connection}>("table-session",{method:"POST",body:JSON.stringify({tableToken:table.token,customerName})});connectionRef.current=d.connection;setConnection(d.connection);await loadMenu().catch(()=>{});notify(d.connection.state==="active"?"Bàn đã được mở. Bạn có thể gọi món.":"Đã gửi yêu cầu mở bàn đến quản trị.");}
  function openCustomerCancel(order:Order){setCustomerCancel(order);setCancelReason("Đặt nhầm món");setCancelDetail("");setCancelError("");}
  async function submitCustomerCancel(){
@@ -424,12 +442,28 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
   }
   finally{if(epoch===reloadEpoch.current)polling.current=false;}
  },[staff,tab,initialDashboard,onShopChange,onDisplaySettings,onThemeSettings,onAccessChange,notifications.observeDashboard,notifications.restrictAlerts,notifications.resetAlerts]);
+ const pollerRef=useRef<AdaptiveScheduler|null>(null);
  useEffect(()=>{
-  setOrigin(window.location.origin);void reload();
-  const refresh=()=>{if(document.visibilityState==="visible")void reload();};
-  const interval=setInterval(refresh,operationalTabs.includes(tab)?3000:30000);document.addEventListener("visibilitychange",refresh);
-  return()=>{clearInterval(interval);document.removeEventListener("visibilitychange",refresh);reloadEpoch.current+=1;polling.current=false;};
- },[reload]);
+  setOrigin(window.location.origin);
+  const baseInterval=operationalTabs.includes(tab)?5000:30000;
+  if(!pollerRef.current){
+   pollerRef.current=new AdaptiveScheduler({
+    task:async()=>{await reload();},
+    baseIntervalMs:baseInterval,
+    maxIntervalMs:30000,
+    pauseWhenHidden:true,
+   });
+   pollerRef.current.start();
+  }else{
+   pollerRef.current.setBaseInterval(baseInterval);
+  }
+  return()=>{
+   pollerRef.current?.stop();
+   pollerRef.current=null;
+   reloadEpoch.current+=1;
+   polling.current=false;
+  };
+ },[tab,reload]);
  useEffect(()=>{
   if(alertUserId.current!==(access?.userId??null)){notifications.resetAlerts();setData(null);alertUserId.current=access?.userId??null;}
   notifications.restrictAlerts(canOrders,canTables);
@@ -476,6 +510,7 @@ function AdminPanel({initialDashboard,staff,access,onAccessChange,ready,notify,o
    setRevenueRevision(n=>n+1);
    try{
     await reload(true);
+    pollerRef.current?.resetSchedule();
     void onMenuRefresh().catch(()=>{});
     notify(message);
    }catch{
