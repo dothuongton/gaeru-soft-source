@@ -13,16 +13,14 @@ import "./admin-order-alerts.css";
 
 import {isVietnameseVoice, selectVietnameseVoice} from "@/lib/vietnamese-voice";
 import {MediaChime} from "@/lib/media-chime";
+import {notificationStorage, readNotificationPreferences, saveNotificationPreferences} from "@/lib/staff-notification-preferences";
 type PlaybackNavigator = Navigator & {audioSession?: {type: string}};
 type AudioReadiness = {ready: boolean; needsGesture: boolean};
 
-export function useAdminOrderAlerts(popupSeconds = 3) {
+export function useAdminOrderAlerts(popupSeconds = 3, preferenceKey: string | null = null) {
   const [soundMode,setMode]=useState<"voice"|"chime"|"silent">("voice");
   const modeRef=useRef<"voice"|"chime"|"silent">("voice");
   const chimePlaying=useRef(false);
-  useEffect(()=>{
-    try{const saved=localStorage.getItem("gaeru:audio-mode");if(saved==="voice"||saved==="chime"||saved==="silent"){modeRef.current=saved;setMode(saved);}}catch{/* Storage can be unavailable. */}
-  },[]);
   const [queue, setQueue] = useState<AdminAlert[]>([]);
   const [readiness, setReadiness] = useState<AudioReadiness>({ready: false, needsGesture: true});
   const [voiceNotice, setVoiceNotice] = useState("");
@@ -95,8 +93,21 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
   const setSoundMode=useCallback((mode:"voice"|"chime"|"silent")=>{
     stopSpeech();mediaChime.current?.stop();audioQueue.current.reconcile([]);
     modeRef.current=mode;setMode(mode);audioBlocked.current=false;reportReadiness();
-    try{localStorage.setItem("gaeru:audio-mode",mode);}catch{/* Session state remains usable. */}
-  },[stopSpeech,reportReadiness]);
+    saveNotificationPreferences(notificationStorage(),preferenceKey,{soundMode:mode,voice:selectedVoiceRef.current});
+  },[stopSpeech,reportReadiness,preferenceKey]);
+
+  useEffect(()=>{
+    const saved=readNotificationPreferences(notificationStorage(),preferenceKey);
+    stopSpeech();mediaChime.current?.stop();audioQueue.current.reconcile([]);
+    modeRef.current=saved.soundMode;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate browser-only preferences without changing server HTML.
+    setMode(saved.soundMode);
+    selectedVoiceRef.current=saved.voice;setSelectedVoice(saved.voice);
+    vietnameseVoice.current=null;speechReady.current=false;speechNeedsGesture.current=false;
+    audioBlocked.current=false;reportReadiness();
+    // The old global preference has no trustworthy account/store owner; do not
+    // import it into other employees' settings on a shared tablet.
+  },[preferenceKey,stopSpeech,reportReadiness]);
 
   const continueAudio = useCallback((delay = 180) => {
     if (nextSpeechTimer.current) clearTimeout(nextSpeechTimer.current);
@@ -461,7 +472,7 @@ export function useAdminOrderAlerts(popupSeconds = 3) {
     ? "Chạm “Phát thông báo” để kích hoạt giọng đọc tiếng Việt. Giữ trang quản trị mở; kiểm tra âm lượng đa phương tiện, chế độ im lặng và kết nối Bluetooth."
     : "");
   const audioNotice = [mediaNotice, speechNotice].filter(Boolean).join(" ");
-  const chooseVoice = (id: string) => {stopSpeech(); selectedVoiceRef.current = id; setSelectedVoice(id); speechReady.current = false; setVoiceNotice("Đã chọn giọng. Chạm Thử giọng đọc để kiểm tra."); reportReadiness();};
+  const chooseVoice = (id: string) => {stopSpeech(); selectedVoiceRef.current = id; setSelectedVoice(id); saveNotificationPreferences(notificationStorage(),preferenceKey,{soundMode:modeRef.current,voice:id}); speechReady.current = false; setVoiceNotice("Đã chọn giọng. Chạm Thử giọng đọc để kiểm tra."); reportReadiness();};
   const testChime = () => {stopSpeech(); setMediaNotice("Đang thử chuông…"); void chime();};
   return {soundMode,setSoundMode,active: visible ? active : null, durationMs, waiting: Math.max(0, queue.length - 1), soundEnabled: soundMode!=="silent", soundReady: readiness.ready, soundNeedsGesture: readiness.needsGesture, audioNotice, toggleSound: activateSound, testSound, testChime, voiceOptions, selectedVoice, chooseVoice, voiceSummary, observeDashboard, restrictAlerts, resetAlerts, observeOrders, chime, dismiss};
 }

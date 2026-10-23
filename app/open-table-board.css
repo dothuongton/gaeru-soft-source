@@ -297,3 +297,66 @@
 .otb-footer-btn.close-btn{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .otb-footer-btn:disabled{opacity:0.5;cursor:not-allowed}
 .otb-detail-outstanding-hint{font-size:13px;color:#b45309;display:flex;align-items:center;gap:5px;margin:8px 0 0}
+
+/* Session bill: only the line list scrolls; the single collection action stays visible. */
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.otb-visit-popup.otb-receipt-popup[open]{inset:calc(8px + env(safe-area-inset-top)) 8px auto;height:calc(var(--aw-viewport-height,100dvh) - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));max-height:calc(var(--aw-viewport-height,100dvh) - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));width:calc(100vw - 16px);max-width:640px;margin:0 auto;border:1px solid var(--aw-line,var(--line));background:var(--moc-surface-soft,#f8faf7)}
+.app-shell[data-view="admin"] .admin-workspace dialog.otb-receipt-popup>.modal-header{padding:8px 14px;gap:8px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between}
+.app-shell[data-view="admin"] .admin-workspace dialog.otb-receipt-popup>.modal-header h2{font-size:19px;margin:0;min-width:0}
+.app-shell[data-view="admin"] .admin-workspace dialog.otb-receipt-popup>.otb-visit-content{display:flex;flex-direction:column;padding:0;overflow:hidden;min-height:0;flex:1;scrollbar-gutter:auto}
+.app-shell[data-view="admin"] .admin-workspace .otb-receipt-popup .otb-detail-sheet{flex:1;min-height:0;overflow:hidden}
+.app-shell[data-view="admin"] .otb-bill{--bill-line:var(--aw-line,var(--line,#dce3de));--bill-muted:var(--aw-muted,var(--muted,#657368));color:var(--aw-ink,var(--ink,#27382e));background:#fff;font-variant-numeric:tabular-nums}
+.app-shell[data-view="admin"] .otb-bill .otb-detail-scroll{flex:1;min-height:0;overflow:auto;padding:12px 14px 18px;overscroll-behavior:contain;scrollbar-gutter:stable;-webkit-overflow-scrolling:touch}
+.app-shell[data-view="admin"] .otb-bill-meta{display:flex;flex-direction:column;gap:3px;margin-bottom:12px;color:var(--bill-muted)}
+.app-shell[data-view="admin"] .otb-bill-meta>span{display:flex;align-items:center;gap:5px;font-size:12px;overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .otb-bill .otb-detail-tabs{gap:4px;margin:0 0 10px;padding:3px;background:var(--aw-soft,#edf2e7);border-radius:9px}
+.app-shell[data-view="admin"] .otb-bill .otb-detail-tabs button{font-size:13px;border:0;min-height:44px;background:transparent;padding:4px;color:var(--aw-ink,#27382e)}
+.app-shell[data-view="admin"] .otb-bill .otb-detail-tabs button.selected{background:#fff;color:var(--aw-accent,#244f3c);box-shadow:0 1px 3px #0001}
+.app-shell[data-view="admin"] .otb-bill .otb-detail-tabs .tab-pill{font-size:11px;color:inherit;background:var(--aw-soft,#edf2e7);padding:0 5px}
+.app-shell[data-view="admin"] .otb-bill-columns,.app-shell[data-view="admin"] .otb-bill-line-heading{display:grid;grid-template-columns:26px minmax(0,1fr) max-content;column-gap:7px;align-items:start}
+.app-shell[data-view="admin"] .otb-bill-columns{font-size:11px;color:var(--bill-muted);padding-bottom:8px;border-bottom:1px dashed var(--bill-line)}
+.app-shell[data-view="admin"] .otb-bill-line{padding:12px 0;border-bottom:1px solid var(--bill-line);min-width:0}
+.app-shell[data-view="admin"] .otb-bill-line-heading strong{font-size:14px;line-height:1.4;overflow-wrap:anywhere;display:block}
+.app-shell[data-view="admin"] .otb-bill-qty{font-size:14px;line-height:1.4}
+.app-shell[data-view="admin"] .otb-bill-line-heading small{display:block;font-size:11px;color:var(--bill-muted);margin-top:3px}
+.app-shell[data-view="admin"] .otb-bill-price{text-align:right;white-space:nowrap;max-width:42vw}
+.app-shell[data-view="admin"] .otb-bill :is(.otb-bill-note,.otb-bill-rounds){font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0 0 33px}
+.app-shell[data-view="admin"] .otb-bill-note{color:var(--aw-ink,#27382e)}
+.app-shell[data-view="admin"] .otb-bill-rounds{color:var(--bill-muted)}
+.app-shell[data-view="admin"] .otb-bill-stages{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 0 33px}
+.app-shell[data-view="admin"] .otb-bill-stages .stage-badge{font-size:11px;padding:1px 5px;line-height:1.5}
+.app-shell[data-view="admin"] .otb-bill :is(.otb-bill-line-actions,.otb-bill-secondary){margin-top:5px}
+.app-shell[data-view="admin"] .otb-bill :is(.otb-bill-line-actions,.otb-bill-secondary)>summary{cursor:pointer;display:flex;align-items:center;gap:4px;min-height:44px;font-size:12px;color:var(--aw-accent,#244f3c);list-style:none}
+.app-shell[data-view="admin"] .otb-bill :is(.otb-bill-line-actions,.otb-bill-secondary)>summary::-webkit-details-marker{display:none}
+.app-shell[data-view="admin"] .otb-bill :is(.otb-bill-line-actions,.otb-bill-secondary)>div{display:flex;flex-wrap:wrap;gap:6px}
+.app-shell[data-view="admin"] .otb-bill :is(.otb-bill-line-actions,.otb-bill-secondary) button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;border:1px solid var(--bill-line);border-radius:8px;background:var(--aw-soft,#edf2e7);font-size:13px;padding:7px 10px;color:var(--aw-ink,#27382e)}
+.app-shell[data-view="admin"] .otb-bill button:disabled{opacity:.5;cursor:not-allowed}
+.app-shell[data-view="admin"] .otb-bill-secondary p{font-size:12px;color:var(--bill-muted);margin:7px 0}
+.app-shell[data-view="admin"] .otb-bill-round{margin-top:12px}
+.app-shell[data-view="admin"] .otb-bill-round>header{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:var(--aw-soft,#edf2e7);padding:8px;border-radius:6px;font-size:13px}
+.app-shell[data-view="admin"] .otb-bill-round>header span{font-size:12px}
+.app-shell[data-view="admin"] .otb-bill-round-code{display:block;font-size:11px;color:var(--bill-muted);margin:5px 0}
+.app-shell[data-view="admin"] .otb-bill-round.is-cancelled{color:var(--bill-muted)}
+.app-shell[data-view="admin"] .otb-bill-round.is-cancelled .otb-bill-price{text-decoration:line-through}
+.app-shell[data-view="admin"] .otb-bill-round-total{display:flex;justify-content:space-between;font-size:13px;margin:8px 0}
+.app-shell[data-view="admin"] .otb-bill-footer{flex:0 0 auto;position:static;margin:0;padding:10px 14px;border-radius:0;background:var(--moc-surface-soft,#f8faf7);border-top:1px solid var(--bill-line)}
+.app-shell[data-view="admin"] .otb-bill-total-meta{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;margin:0 0 5px;font-size:11px;color:var(--bill-muted)}
+.app-shell[data-view="admin"] .otb-bill-total-meta span{display:flex;gap:4px}
+.app-shell[data-view="admin"] .otb-bill-due{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;margin-bottom:7px}
+.app-shell[data-view="admin"] .otb-bill-due>strong{font-size:20px;font-weight:700}
+.app-shell[data-view="admin"] .otb-bill-footer .otb-bill-pay{display:flex;align-items:center;gap:7px;justify-content:center;width:100%;min-height:48px;padding:9px 12px;border-radius:9px;border:0;background:var(--aw-accent,#244f3c);color:var(--moc-on-accent,#fff);font-size:14px}
+.app-shell[data-view="admin"] .otb-bill-pay>strong{margin-left:auto;font-size:14px}
+.app-shell[data-view="admin"] .otb-bill-footer .otb-bill-pending{font-size:11px;line-height:1.3;margin:5px 0 0;color:var(--bill-muted);text-align:center}
+.app-shell[data-view="admin"] .otb-bill-support{display:flex;gap:5px;align-items:center;padding:8px;background:var(--aw-soft,#edf2e7);font-size:12px;border-radius:6px;margin-bottom:10px;overflow-wrap:anywhere}
+@media(min-width:768px){.app-shell[data-view="admin"] .admin-workspace dialog.modal.otb-visit-popup.otb-receipt-popup[open]{inset:calc(12px + env(safe-area-inset-top)) 12px auto auto;margin:0;max-width:600px;height:calc(var(--aw-viewport-height,100dvh) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));max-height:calc(var(--aw-viewport-height,100dvh) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}}
+@media(max-width:350px){.app-shell[data-view="admin"] .otb-bill-line-heading{grid-template-columns:23px minmax(0,1fr) max-content;gap:5px}.app-shell[data-view="admin"] .otb-bill-line-heading strong{font-size:13px}.app-shell[data-view="admin"] .otb-bill .otb-detail-scroll{padding-left:10px;padding-right:10px}}
+.app-shell[data-view="admin"] .otb-bill-support{display:block}
+.app-shell[data-view="admin"] .otb-bill-support>summary{display:flex;align-items:center;gap:6px;cursor:pointer;min-height:32px;list-style:none}
+.app-shell[data-view="admin"] .otb-bill-support>summary::-webkit-details-marker{display:none}
+.app-shell[data-view="admin"] .otb-bill-support>div{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--bill-line)}
+.app-shell[data-view="admin"] .otb-bill-support small{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .otb-bill-support button{font-size:12px;padding:6px;border:1px solid var(--bill-line);border-radius:6px;min-height:44px;flex-shrink:0}
+.app-shell[data-view="admin"] .admin-workspace dialog.otb-receipt-popup .otb-bill-line :is(p,small,span){font-size:12px;line-height:1.4}
+.app-shell[data-view="admin"] .otb-bill-progress-actions{flex-direction:column}
+.app-shell[data-view="admin"] .otb-bill-progress-actions>section{display:flex;flex-direction:column;gap:6px;padding:8px 0}
+.app-shell[data-view="admin"] .otb-bill-progress-actions>section>div{display:flex;flex-wrap:wrap;gap:5px}
+.app-shell[data-view="admin"] .otb-bill-progress-actions>section>strong{font-size:13px}

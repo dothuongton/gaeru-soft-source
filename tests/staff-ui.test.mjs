@@ -110,7 +110,7 @@ test("revoked staff cannot see account manager controls even if a previous permi
 const mutationButtons = {
   "orders.manage": ["Nhận đơn"],
   "orders.cancel": ["Hủy đơn"],
-  "payments.collect": ["Thanh toán cả bàn", "Thanh toán lần này"],
+  "payments.collect": ["Thanh toán cả bàn"],
   "tables.manage": ["Duyệt mở bàn", "Từ chối", "Đã hỗ trợ", "Đóng bàn"],
   "tables.transfer": ["Đổi bàn"],
 };

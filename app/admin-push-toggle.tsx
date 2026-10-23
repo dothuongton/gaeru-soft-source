@@ -1,66 +1,52 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bell, BellOff, BellRing, LoaderCircle, AlertTriangle, Send } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Smartphone, LoaderCircle, AlertTriangle, Send, Power } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
+import {activeStoreId} from "@/lib/store-links";
+import {notificationStorage, staffNotificationKey} from "@/lib/staff-notification-preferences";
+import {checkStaffPush, matchesApplicationKey, readPushHint, savePushHint, urlBase64ToUint8Array, withPushTimeout as withTimeout, type PushState, type PushStatus} from "@/lib/staff-push-client";
 
+let sessionDeviceId: string | undefined;
 function getOrCreateDeviceId(): string {
   if (typeof window === "undefined") return "server-device";
-  let id = localStorage.getItem("gaeru:device-id");
+  const storage = notificationStorage();
+  let id: string|null|undefined;
+  try {id=storage?.getItem("gaeru:device-id");} catch { /* Private mode can deny storage access. */ }
   if (!id || !/^[a-zA-Z0-9_-]{8,64}$/.test(id)) {
-    id = "dev-" + crypto.randomUUID().replaceAll("-", "").slice(0, 20);
-    localStorage.setItem("gaeru:device-id", id);
+    id = sessionDeviceId ?? "dev-" + crypto.randomUUID().replaceAll("-", "").slice(0, 20);
+    try {storage?.setItem("gaeru:device-id", id);} catch { /* Browser storage may be restricted. */ }
   }
+  sessionDeviceId=id;
   return id;
 }
 
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
+export function AdminPushToggle({notify,iconOnly=false,userId}:{notify:(msg:string,kind?:"success"|"error"|"info")=>void;iconOnly?:boolean;userId:string|null}){
+ const storeId=activeStoreId();
+ return <span className={iconOnly?"aw-push-control":""}><PushControl key={JSON.stringify([storeId,userId])} notify={notify} storeId={storeId} userId={userId}/></span>;
 }
-
-const withTimeout = <T,>(promise: Promise<T>, ms = 5000): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error("Service Worker không phản hồi kịp thời")), ms)
-    ),
-  ]);
-};
-
-function matchesApplicationKey(subscription:PushSubscription,key:string){
- const saved=subscription.options.applicationServerKey;
- if(!saved)return false;
- const expected=urlBase64ToUint8Array(key),bytes=new Uint8Array(saved);
- return bytes.length===expected.length&&bytes.every((byte,index)=>byte===expected[index]);
-}
-
-type PushState = "checking" | "unsupported" | "server_disabled" | "denied" | "ready" | "subscribed" | "key_changed" | "check_error";
-
-export function AdminPushToggle({notify,iconOnly=false}:{notify:(msg:string,kind?:"success"|"error"|"info")=>void;iconOnly?:boolean}){
- return <span className={iconOnly?"aw-push-control":""}><PushControl notify={notify}/></span>;
-}
-function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|"info") => void }) {
+function PushControl({ notify, storeId, userId }: { notify: (msg: string,kind?:"success"|"error"|"info") => void;storeId:string;userId:string|null }) {
   const [state, setState] = useState<PushState>("checking");
   const [loading, setLoading] = useState(false);
   const [testTesting, setTestTesting] = useState(false);
   const [checkRevision,setCheckRevision]=useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [vapidKey, setVapidKey] = useState<string | null>(null);
+  const [hint, setHint] = useState<"subscribed"|"ready"|null>(null);
+  const preferenceKey=staffNotificationKey(storeId,userId);
+  const generation=useRef(0);
+  const actionBusy=useRef(false);
+  const pushApi=useCallback(<T,>(path:string,options?:RequestInit)=>api<T>(path,options,storeId),[storeId]);
+  const remember=useCallback((next:PushState)=>{setState(next);savePushHint(notificationStorage(),preferenceKey,next);},[preferenceKey]);
 
   useEffect(() => {
     let cancelled = false;
+    let checking = false;
 
     const checkStatus = async () => {
       // Async boundary prevents synchronous setState inside effect
       await Promise.resolve();
-      if (cancelled) return;
+      if (cancelled || checking || actionBusy.current) return;
 
       if (typeof window === "undefined") return;
 
@@ -69,49 +55,49 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
         return;
       }
 
-      if (Notification.permission === "denied") {
+      if ((() => Notification.permission)() === "denied") {
         if (!cancelled) setState("denied");
         return;
       }
 
+      checking=true;
+      const epoch=generation.current;
       try {
-        const config = await api<{ enabled: boolean; vapidPublicKey: string | null }>("admin/push/config");
-        if (cancelled) return;
-
-        if (!config.enabled || !config.vapidPublicKey) {
-          setState("server_disabled");
-          return;
-        }
-        setVapidKey(config.vapidPublicKey);
-
         const deviceId = getOrCreateDeviceId();
-        const status = await api<{ subscribed: boolean }>(`admin/push/status?deviceId=${encodeURIComponent(deviceId)}`);
-        if (cancelled) return;
-
-        const reg = await withTimeout(navigator.serviceWorker.ready, 4000);
-        const existingSub = await reg.pushManager.getSubscription();
-        if (cancelled) return;
-
-        if(existingSub&&!matchesApplicationKey(existingSub,config.vapidPublicKey)){setState("key_changed");return;}
-        if (status.subscribed && existingSub) {
-          setState("subscribed");
-        } else {
-          setState("ready");
-        }
+        const result = await checkStaffPush(
+          () => pushApi<PushStatus>(`admin/push/status?deviceId=${encodeURIComponent(deviceId)}`),
+          () => withTimeout(navigator.serviceWorker.getRegistration().then(reg => reg?.active ? reg.pushManager.getSubscription() : null), 4000),
+          Notification.permission,
+        );
+        if (cancelled || epoch!==generation.current) return;
+        // Permissions may have changed while the network check was pending.
+        const next=Notification.permission==="denied"?"denied":Notification.permission!=="granted"&&result.state==="subscribed"?"ready":result.state;
+        setVapidKey(result.vapidKey);
+        remember(next);
       } catch {
-        if (!cancelled) setState("check_error");
-      }
+        if (!cancelled && epoch===generation.current) setState("check_error");
+      } finally {checking=false;}
     };
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Read the browser-only display hint after hydration.
+    setHint(readPushHint(notificationStorage(),preferenceKey));
     void checkStatus();
+    const refresh=()=>{if(document.visibilityState==="visible")void checkStatus();};
+    navigator.serviceWorker?.addEventListener("controllerchange",refresh);
+    window.addEventListener("pageshow",refresh);
+    document.addEventListener("visibilitychange",refresh);
 
     return () => {
       cancelled = true;
+      navigator.serviceWorker?.removeEventListener("controllerchange",refresh);
+      window.removeEventListener("pageshow",refresh);
+      document.removeEventListener("visibilitychange",refresh);
     };
-  }, [checkRevision]);
+  }, [checkRevision,preferenceKey,pushApi,remember]);
 
   const handleSubscribe = async () => {
-    if (loading || !vapidKey) return;
+    if (actionBusy.current || !vapidKey) return;
+    actionBusy.current=true;generation.current++;
     setLoading(true);
 
     try {
@@ -147,7 +133,7 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
 
       const deviceId = getOrCreateDeviceId();
 
-      await api("admin/push/subscribe", {
+      await pushApi("admin/push/subscribe", {
         method: "POST",
         body: JSON.stringify({
           deviceId,
@@ -158,7 +144,7 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
         }),
       });
 
-      setState("subscribed");
+      remember("subscribed");
       notify("Đã bật thông báo đẩy trên thiết bị này.");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -167,12 +153,14 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
         notify((err as Error).message || "Không thể kích hoạt thông báo đẩy.");
       }
     } finally {
+      actionBusy.current=false;
       setLoading(false);
     }
   };
 
   const handleUnsubscribe = async () => {
-    if (loading) return;
+    if (actionBusy.current) return;
+    actionBusy.current=true;generation.current++;
     setLoading(true);
 
     try {
@@ -189,18 +177,19 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
         // tolerate timeout
       }
 
-      await api("admin/push/unsubscribe", {
+      await pushApi("admin/push/unsubscribe", {
         method: "POST",
         body: JSON.stringify({ deviceId, endpoint }),
       });
 
       // NOTE: We do NOT call sub.unsubscribe() so other store subscriptions remain intact
-      setState("ready");
+      remember("ready");
       setMenuOpen(false);
       notify("Đã tắt thông báo đẩy cho cửa hàng này trên máy.");
     } catch (err) {
       notify((err as Error).message || "Chưa tắt được thông báo. Vui lòng thử lại.");
     } finally {
+      actionBusy.current=false;
       setLoading(false);
     }
   };
@@ -211,7 +200,7 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
 
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await api<{ success: boolean; delivered: number; error?: string }>("admin/push/test", {
+      const res = await pushApi<{ success: boolean; delivered: number; error?: string }>("admin/push/test", {
         method: "POST",
         body: JSON.stringify({ deviceId }),
       });
@@ -231,9 +220,9 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
   if(state==="check_error")return <button type="button" className="secondary icon-label" onClick={()=>{setState("checking");setCheckRevision(value=>value+1);}} title="Chưa kiểm tra được cấu hình push. Nhấn để thử lại."><AlertTriangle size={17}/><span>Kiểm tra lại thông báo đẩy</span></button>;
   if (state === "checking") {
     return (
-      <button type="button" disabled className="secondary icon-label opacity-70 cursor-wait">
-        <LoaderCircle size={17} className="animate-spin text-slate-500" />
-        <span>Đang kiểm tra push…</span>
+      <button type="button" onClick={()=>notify("Đang xác minh thông báo đẩy ở nền. Bạn vẫn có thể sử dụng các chức năng khác.","info")} className="secondary icon-label" title={hint==="subscribed"?"Thông báo đẩy đã bật lần trước · Đang xác minh lại":"Đang xác minh thông báo đẩy ở nền"}>
+        <Smartphone size={20} />
+        <span>{hint==="subscribed"?"Push đã bật lần trước · Đang xác minh":"Đang xác minh thông báo đẩy"}</span>
       </button>
     );
   }
@@ -246,7 +235,7 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
         title="Thiết bị chưa hỗ trợ Web Push. Trên iPhone/iPad: Hãy chọn Thêm vào Màn hình chính (PWA) để nhận thông báo."
         onClick={() => notify("Trình duyệt này chưa hỗ trợ Web Push. Trên iOS/iPadOS: Hãy nhấn biểu tượng Chia sẻ -> Thêm vào màn hình chính rồi mở ứng dụng.")}
       >
-        <BellOff size={17} />
+        <Smartphone size={20} />
         <span>Push chưa hỗ trợ</span>
       </button>
     );
@@ -274,7 +263,7 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
         title="Tính năng Web Push chưa được cấu hình VAPID trên máy chủ quán."
         onClick={() => notify("Tính năng Web Push chưa được bật trên máy chủ quán (thiếu cấu hình VAPID).")}
       >
-        <BellOff size={17} />
+        <Smartphone size={20} />
         <span>Push chưa cấu hình</span>
       </button>
     );
@@ -290,7 +279,8 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
           title="Thông báo đẩy đang hoạt động. Nhấn để thử hoặc tùy chỉnh."
           aria-expanded={menuOpen}
         >
-          <BellRing size={17} className="text-emerald-700 animate-pulse" />
+          <Smartphone size={20} className="text-emerald-700" />
+          <i className="aw-push-enabled" aria-hidden="true" />
           <span>Push đã bật</span>
         </button>
 
@@ -317,7 +307,7 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
               onClick={handleUnsubscribe}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-rose-50 text-rose-700 disabled:opacity-50"
             >
-              <BellOff size={15} />
+              <Power size={15} />
               <span>Tắt trên máy này</span>
             </button>
           </div>
@@ -334,7 +324,7 @@ function PushControl({ notify }: { notify: (msg: string,kind?:"success"|"error"|
       className="secondary icon-label"
       title="Bật thông báo đẩy để nhận tin đơn gọi món và khách gọi nhân viên khi không nhìn màn hình."
     >
-      {loading ? <LoaderCircle size={17} className="animate-spin text-emerald-600" /> : <Bell size={17} />}
+      {loading ? <LoaderCircle size={17} className="animate-spin text-emerald-600" /> : <Smartphone size={20} />}
       <span>{state==="key_changed"?"Cập nhật đăng ký thông báo đẩy":"Bật thông báo đẩy"}</span>
     </button>
   );

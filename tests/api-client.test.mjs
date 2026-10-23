@@ -59,3 +59,11 @@ test("conditional reads reuse a private snapshot, invalidate writes and reject r
   await assert.rejects(api("admin?section=board"),error=>error.status===403);
  }finally{globalThis.fetch=original;}
 });
+
+test("a captured push action retains its shop even if the active UI has moved",async()=>{
+ const original=globalThis.fetch;
+ try {
+  globalThis.fetch=async(url)=>{assert.equal(url,"/api/admin/push/status?deviceId=test&store=shop-a");return Response.json({subscribed:true});};
+  assert.deepEqual(await api("admin/push/status?deviceId=test",{},"shop-a"),{subscribed:true});
+ } finally {globalThis.fetch=original;}
+});
