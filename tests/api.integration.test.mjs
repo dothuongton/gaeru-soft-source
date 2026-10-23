@@ -24,6 +24,10 @@ function loadApp(entry = "route") {
   const cache = new Map();
   const paths = {
     route: "app/api/[...path]/route.ts",
+    paidInvoicesServer:"lib/paid-invoices-server.ts",
+    lineTransition:"lib/order-line-transition.ts",
+    tableZones:"lib/table-zones.ts",
+    tableZonesServer:"lib/table-zones-server.ts",
     storeDatabase:"lib/store-database.ts",storePlatform:"lib/store-platform.ts",
     server: "lib/server.ts",
     menu: "lib/menu.ts",
@@ -61,6 +65,10 @@ function loadApp(entry = "route") {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     const require = (specifier) => {
+      if(specifier.endsWith("/paid-invoices-server"))return load("paidInvoicesServer");
+      if(specifier.endsWith("/order-line-transition"))return load("lineTransition");
+      if(specifier.endsWith("/table-zones-server"))return load("tableZonesServer");
+      if(specifier.endsWith("/table-zones"))return load("tableZones");
       if(specifier.endsWith("/conditional-json"))return load("conditionalJson");
       if(specifier==="node:async_hooks")return {AsyncLocalStorage};
       if(specifier.endsWith("/store-database"))return load("storeDatabase");
@@ -3795,4 +3803,136 @@ test("admin conditional polling still checks access before honoring its validato
  const headers={"oai-authenticated-user-id":"test-owner-id","oai-authenticated-user-email":"test@example.test","If-None-Match":first.headers.get("etag")};
  const same=await api.GET(new Request(origin+"/api/admin?section=board",{headers}));assert.equal(same.status,304);assert.equal(await same.text(),"");
  const unauthorized=await api.GET(new Request(origin+"/api/admin?section=board",{headers:{"If-None-Match":first.headers.get("etag")}}));assert.equal(unauthorized.status,403);
+});
+
+test("area directory persists its visibility and preserves table IDs, QR tokens and live sessions on rename",async()=>{
+ const initial=(await call("GET","admin",undefined,{staff:true})).data.zoneSettings;
+ assert.equal(initial.enabled,true);
+ const created=await call("PATCH","admin/zones",{action:"create",name:"Khu mới QA",version:initial.version},{staff:true});
+ assert.equal(created.status,200,JSON.stringify(created.data));
+ const hidden=await call("PATCH","admin/zones",{action:"toggle",enabled:false,version:created.data.zoneSettings.version},{staff:true});
+ assert.equal(hidden.status,200);
+ assert.equal((await call("GET","admin?section=board",undefined,{staff:true})).data.zoneSettings.enabled,false);
+ const before=sqlite.prepare("SELECT id,name,zone,token FROM dining_tables WHERE id = ?").get(table.id);
+ const renamed=await call("PATCH","admin/zones",{action:"rename",name:before.zone,newName:"Sảnh QA mới",version:hidden.data.zoneSettings.version},{staff:true});
+ assert.equal(renamed.status,200,JSON.stringify(renamed.data));
+ const after=sqlite.prepare("SELECT id,name,zone,token FROM dining_tables WHERE id = ?").get(table.id);
+ assert.equal(after.zone,"Sảnh QA mới");
+ assert.equal(after.id,before.id);assert.equal(after.token,before.token);assert.equal(after.name,before.name);
+ assert.equal(sqlite.prepare("SELECT table_id FROM table_sessions WHERE id = ?").get(currentSession.id).table_id,table.id);
+ const protectedZone=await call("PATCH","admin/zones",{action:"delete",name:"Sảnh QA mới",version:renamed.data.zoneSettings.version},{staff:true});
+ assert.equal(protectedZone.status,409);
+ const removed=await call("PATCH","admin/zones",{action:"delete",name:"Khu mới QA",version:renamed.data.zoneSettings.version},{staff:true});
+ assert.equal(removed.status,200);
+ assert.equal(removed.data.zoneSettings.names.includes("Khu mới QA"),false);
+});
+
+test("area writes enforce permissions, reject duplicates and cannot overwrite a concurrent configuration",async()=>{
+ const current=(await call("GET","admin",undefined,{staff:true})).data.zoneSettings;
+ assert.equal((await call("PATCH","admin/zones",{action:"toggle",enabled:false,version:current.version})).status,403);
+ const viewer=await grantStaff(["orders.view"]);
+ assert.equal((await call("PATCH","admin/zones",{action:"toggle",enabled:false,version:current.version},{identity:viewer.identity})).status,403);
+ const changed=await call("PATCH","admin/zones",{action:"create",name:"Khu độc lập",version:current.version},{staff:true});
+ assert.equal(changed.status,200);
+ assert.equal((await call("PATCH","admin/zones",{action:"toggle",enabled:false,version:current.version},{staff:true})).status,409);
+ const version=changed.data.zoneSettings.version;
+ assert.equal((await call("PATCH","admin/zones",{action:"create",name:" khu độc lập ",version},{staff:true})).status,409);
+ assert.equal((await call("PATCH","admin/zones",{action:"toggle",enabled:"false",version},{staff:true})).status,400);
+ const fresh=(await call("GET","admin",undefined,{staff:true})).data.zoneSettings;
+ assert.equal(fresh.enabled,true);assert.equal(fresh.version,version);
+});
+
+test("a zone directory race cannot leave tables renamed without its matching directory version",{timeout:5000},async()=>{
+ const current=(await call("GET","admin",undefined,{staff:true})).data.zoneSettings;
+ const before=sqlite.prepare("SELECT zone FROM dining_tables WHERE id = ?").get(table.id).zone;
+ const pause=pauseNextWrite(sql=>sql.startsWith("INSERT INTO settings")||sql.startsWith("UPDATE settings"));
+ const first=call("PATCH","admin/zones",{action:"rename",name:before,newName:"Thua cuộc",version:current.version},{staff:true});
+ await pause.reached;
+ const winner=await call("PATCH","admin/zones",{action:"create",name:"Thắng cuộc",version:current.version},{staff:true});
+ assert.equal(winner.status,200,JSON.stringify(winner.data));
+ pause.release();
+ assert.equal((await first).status,409);
+ assert.equal(sqlite.prepare("SELECT zone FROM dining_tables WHERE id = ?").get(table.id).zone,before);
+ assert.equal((await call("GET","admin",undefined,{staff:true})).data.zoneSettings.names.includes("Thua cuộc"),false);
+});
+
+test("queue source-stage updates never serve fresh portions after another employee has served the waiting ones",async()=>{
+ const order=insertOrphanOrder(table,{dining_session_id:currentSession.id,status:"new",items:JSON.stringify([{...snapshotLine("tea","Trà",3,35000),orderLineId:"qa-line",newCount:1,preparingCount:1,readyCount:1,servedCount:0}]),total:105000});
+ const move=(fromStatus,count)=>call("PATCH","admin/order",{id:order.id,action:"line_transition",orderLineId:"qa-line",fromStatus,toStatus:"served",count},{staff:true});
+ assert.equal((await move("ready",1)).status,200);
+ assert.equal((await move("preparing",1)).status,200);
+ assert.equal((await move("preparing",1)).status,409);
+ const line=JSON.parse(sqlite.prepare("SELECT items FROM orders WHERE id = ?").get(order.id).items)[0];
+ assert.equal(line.newCount,1);assert.equal(line.servedCount,2);
+ assert.equal((await move("new",1)).status,400);
+});
+
+test("invoice statistics paginate 20/50/100 with stable ordering and period totals, excluding unpaid and cancelled orders",async()=>{
+ const paidAt=Date.parse('2026-10-23T10:00:00+07:00');
+ for(let i=0;i<105;i++)insertRevenueOrder(table,{id:'invoice-order-'+String(i).padStart(3,'0'),paid:1,paid_at:paidAt,payment_method:'cash',total:10000,items:JSON.stringify([snapshotLine('tea','Trà',1,10000)])});
+ insertRevenueOrder(table,{paid:0,paid_at:null,total:80000});
+ insertRevenueOrder(table,{paid:1,status:'cancelled',paid_at:paidAt,total:90000});
+ const prefix='admin/invoices?from=2026-10-23&to=2026-10-23';
+ const first=await call('GET',prefix,undefined,{staff:true});
+ assert.equal(first.status,200,JSON.stringify(first.data));
+ assert.equal(first.data.pageSize,20);assert.equal(first.data.invoices.length,20);assert.equal(first.data.total,105);assert.equal(first.data.totalAmount,1050000);
+ for(const size of [20,50,100]){
+  const a=(await call('GET',prefix+'&pageSize='+size,undefined,{staff:true})).data;
+  const b=(await call('GET',prefix+'&pageSize='+size+'&page=2',undefined,{staff:true})).data;
+  assert.equal(a.invoices.length,size);assert.equal(a.pages,Math.ceil(105/size));
+  assert.equal(new Set([...a.invoices,...b.invoices].map(invoice=>invoice.id)).size,a.invoices.length+b.invoices.length);
+ }
+ for(const bad of ['0','21','101','100000','20.5'])assert.equal((await call('GET',prefix+'&pageSize='+bad,undefined,{staff:true})).status,400);
+ assert.equal((await call('GET',prefix+'&page=0',undefined,{staff:true})).status,400);
+});
+
+test("paid table invoice consolidates its calls, remains readable before closing and does not duplicate legacy paid orders",async()=>{
+ for(let i=0;i<2;i++)insertOrphanOrder(table,{dining_session_id:currentSession.id,status:'served',total:75000});
+ const paid=await collectTable(tablePayment(await tablePaymentQuote()));assert.equal(paid.status,200);
+ const listed=await call('GET','admin/invoices',undefined,{staff:true});
+ assert.equal(listed.status,200,JSON.stringify(listed.data));assert.equal(listed.data.total,1);assert.equal(listed.data.totalAmount,150000);
+ assert.equal(listed.data.invoices[0].orderCount,2);assert.equal(listed.data.invoices[0].source,'table');
+ const detail=await call('GET','admin/invoices/'+encodeURIComponent(listed.data.invoices[0].id),undefined,{staff:true});
+ assert.equal(detail.status,200,JSON.stringify(detail.data));assert.equal(detail.data.orders.length,2);
+ assert.doesNotMatch(JSON.stringify(detail.data),/client_token|request_hash|browser_hash/);
+ assert.equal(sqlite.prepare('SELECT status FROM table_sessions WHERE id = ?').get(currentSession.id).status,'active');
+ assert.equal((await call('GET','admin/invoices')).status,403);
+ const viewer=await grantStaff(['orders.view']);
+ assert.equal((await call('GET','admin/invoices',undefined,{identity:viewer.identity})).status,403);
+ const other=await createTestStore('invoice-other');
+ assert.equal((await storeCall(other.id,'GET','admin/invoices',undefined,{identity:other.identity})).data.total,0);
+ assert.equal((await storeCall(other.id,'GET','admin/invoices/'+encodeURIComponent(listed.data.invoices[0].id),undefined,{identity:other.identity})).status,404);
+});
+
+test("invoice time filtering uses the payment clock in Vietnam and includes the selected ending minute",async()=>{
+ const moment=Date.parse('2026-10-23T10:30:59+07:00');
+ insertRevenueOrder(table,{paid:1,paid_at:moment,total:10000,created_at:Date.parse('2026-09-01T00:00:00Z')});
+ insertRevenueOrder(table,{paid:1,paid_at:moment+1000,total:20000});
+ const prefix='admin/invoices?from=2026-10-23&to=2026-10-23&fromTime=10:30&toTime=10:30';
+ const page=await call('GET',prefix,undefined,{staff:true});assert.equal(page.status,200,JSON.stringify(page.data));
+ assert.equal(page.data.total,1);assert.equal(page.data.totalAmount,10000);
+ assert.equal((await call('GET',prefix.replace('fromTime=10:30','fromTime=10:31'),undefined,{staff:true})).status,400);
+ assert.equal((await call('GET',prefix.replace('fromTime=10:30','fromTime=25:00'),undefined,{staff:true})).status,400);
+});
+
+test("area visibility and directory remain isolated across stores",async()=>{
+ const other=await createTestStore('zones-other');
+ const main=(await call('GET','admin',undefined,{staff:true})).data.zoneSettings;
+ assert.equal((await call('PATCH','admin/zones',{action:'toggle',enabled:false,version:main.version},{staff:true})).status,200);
+ const remote=(await storeCall(other.id,'GET','admin',undefined,{identity:other.identity})).data.zoneSettings;
+ assert.equal(remote.enabled,true);
+ assert.equal((await storeCall(other.id,'PATCH','admin/zones',{action:'create',name:'Khu riêng',version:remote.version},{identity:other.identity})).status,200);
+ assert.equal((await call('GET','admin',undefined,{staff:true})).data.zoneSettings.names.includes('Khu riêng'),false);
+});
+
+test("concurrent portion updates reject stale items even if their revision timestamps collide",{timeout:5000},async()=>{
+ const order=insertOrphanOrder(table,{dining_session_id:currentSession.id,status:'preparing',items:JSON.stringify([{...snapshotLine('tea','Trà',2,35000),orderLineId:'collision-line',newCount:0,preparingCount:2,readyCount:0,servedCount:0}]),total:70000});
+ const pause=pauseNextWrite(sql=>sql.startsWith('UPDATE orders SET items ='));
+ const body={id:order.id,action:'line_transition',orderLineId:'collision-line',fromStatus:'preparing',toStatus:'served',count:1};
+ const stale=call('PATCH','admin/order',body,{staff:true});await pause.reached;
+ assert.equal((await call('PATCH','admin/order',body,{staff:true})).status,200);
+ sqlite.prepare('UPDATE orders SET updated_at = ? WHERE id = ?').run(order.updated_at,order.id);
+ pause.release();assert.equal((await stale).status,409);
+ const line=JSON.parse(sqlite.prepare('SELECT items FROM orders WHERE id = ?').get(order.id).items)[0];
+ assert.equal(line.servedCount,1);assert.equal(line.preparingCount,1);
 });

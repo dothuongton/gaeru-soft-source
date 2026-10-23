@@ -17,6 +17,9 @@ import {hasPermission,type Permission} from "@/lib/staff-permissions";
 import {adminDashboard, getBoardRevision} from "@/lib/admin-dashboard";
 import {handleRealtimeUpgrade, notifyRealtimeInvalidation} from "@/lib/realtime-do";
 import {getVapidConfig, subscribeStaffDevice, unsubscribeStaffDevice, getStaffSubscriptionStatus, dispatchStaffPush, sendTestPush} from "@/lib/staff-push";
+import {listPaidInvoices,paidInvoiceDetail} from "@/lib/paid-invoices-server";
+import {saveTableZones} from "@/lib/table-zones-server";
+import {transitionFromStage} from "@/lib/order-line-transition";
 import {
   ensurePlatformSchema,
   isSelfAuthMode,
@@ -59,11 +62,14 @@ async function handleScoped(request:Request){
    if(path==="admin/push/status"){
     const deviceId = url.searchParams.get("deviceId") || "";
     const userId = access?.userId || access?.email || "";
-    return json(await getStaffSubscriptionStatus({userId, deviceId}));
+    const config=getVapidConfig();
+    return json({...await getStaffSubscriptionStatus({userId, deviceId}),enabled:config.enabled,vapidPublicKey:config.publicKey||null});
    }
    if(path==="admin/accounts"){allow("staff.manage");return json(await listStaffAccounts(access!));}
    if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);return conditionalJson(request,{items,shop:publicShop(shop,currentStoreId()),table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings},device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
    if(path==="orders"){const {tableToken,sessionHint}=readQrEntry(url.searchParams),table=await getTable(tableToken),session=await requireActiveSession(request,table,sessionHint);const r=await db.prepare("SELECT * FROM orders WHERE client_token = ? AND table_id = ? AND dining_session_id = ? ORDER BY created_at DESC,id DESC").bind(session.browser_hash,table.id,session.id).all<Record<string,unknown>>();return json({orders:r.results.map(publicOrder)});}
+   if(path==="admin/invoices"){allow("revenue.view");return json(await listPaidInvoices(url.searchParams));}
+   if(path.startsWith("admin/invoices/")){allow("revenue.view");return json(await paidInvoiceDetail(decodeURIComponent(path.slice("admin/invoices/".length))));}
    if(path==="admin/revenue"){allow("revenue.view");return json(await revenueReport(url.searchParams));}
    if(path==="admin/revenue/orders"){allow("revenue.view");return json(await revenueOrders(url.searchParams));}
    if(path==="admin/table-payment"){allow("payments.collect");return json(await getTablePaymentQuote(url.searchParams));}
@@ -232,6 +238,7 @@ async function handleScoped(request:Request){
   if(request.method==="PATCH"&&path==="admin/session"){allow("tables.manage");const result=await updateTableSession(b.id,b.action);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,...result});}
   if(request.method==="PATCH"&&path==="admin/table-payment"){allow("payments.collect");const res=await payTableBalance(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
   if(request.method==="PATCH"&&path==="admin/table-transfer"){allow("tables.transfer");const res=await transferTable(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
+  if(request.method==="PATCH"&&path==="admin/zones"){allow("tables.manage");const result=await saveTableZones(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(result);}
   if(request.method==="PATCH"&&path==="admin/display-settings"){allow("settings.manage");return json(await saveDisplaySettings(b));}
   if(request.method==="PATCH"&&path==="admin/theme-settings"){allow("settings.manage");return json(await saveThemeSettings(b));}
   if(request.method==="PATCH"&&path==="admin/order"){
@@ -260,6 +267,7 @@ async function handleScoped(request:Request){
      const norm=normalizeOrderItem(item,old.status as OrderStatus,idx);
      if(norm.orderLineId!==lineId&&norm.itemId!==b.itemId)return norm;
      found=true;
+     if(b.fromStatus!==undefined)return transitionFromStage(norm,b.fromStatus,toStatus,b.count);
      let avail=0;
      if(toStatus==="preparing")avail=norm.newCount;
      else if(toStatus==="ready")avail=norm.preparingCount>0?norm.preparingCount:norm.newCount;
@@ -285,7 +293,7 @@ async function handleScoped(request:Request){
     });
     if(!found)throw new OrderError("Không tìm thấy món cần cập nhật.",404);
     const nextStatus=projectOrderStatus(updatedItems,old.status as OrderStatus);
-    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, updated_at = ? WHERE id = ? AND updated_at = ?").bind(JSON.stringify(updatedItems),nextStatus,Date.now(),id,old.updated_at).run();
+    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, updated_at = ? WHERE id = ? AND updated_at = ? AND items = ?").bind(JSON.stringify(updatedItems),nextStatus,Date.now(),id,old.updated_at,old.items).run();
     if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
    }else{
     if(old.paid&&b.status==="cancelled")throw new OrderError("Đơn đã thanh toán. Vui lòng xử lý hoàn tiền trực tiếp tại quầy.",409);

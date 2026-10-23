@@ -28,7 +28,7 @@ const AdminPanel = lazy(() => import("./admin-panel"));
 
 type View="menu"|"orders"|"about"|"admin";
 type MenuResponse={items:MenuItem[];shop:Shop;table:DiningTable;isStaff:boolean;access:StaffAccess;preview:boolean;connection:Connection;displaySettings:DisplaySettings;themeSettings:ThemeSettings};
-export type AdminData={compact?:boolean;access:StaffAccess;items:MenuItem[];shop:Shop;tables:DiningTable[];orders:Order[];calls:ServiceRequest[];sessions:TableSession[];transfers:TableTransfer[];displaySettings:DisplaySettings;themeSettings:ThemeSettings;stats:{todayCount:number|null;todayCollected:number|null}};
+export type AdminData={zoneSettings?:import("@/lib/table-zones").TableZones;compact?:boolean;access:StaffAccess;items:MenuItem[];shop:Shop;tables:DiningTable[];orders:Order[];calls:ServiceRequest[];sessions:TableSession[];transfers:TableTransfer[];displaySettings:DisplaySettings;themeSettings:ThemeSettings;stats:{todayCount:number|null;todayCollected:number|null}};
 const catIcons={all:Grid2X2,main:Soup,light:Salad,drink:Coffee,dessert:CakeSlice};
 
 const safeSet=(key:string,value:string)=>{try{localStorage.setItem(key,value);}catch{/* The active session can still order when storage is restricted. */}};

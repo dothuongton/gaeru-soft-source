@@ -21,7 +21,7 @@ function parseDate(value:string){
  return time;
 }
 
-async function getRange(params:URLSearchParams):Promise<RevenueRange>{
+export async function getRevenueRange(params:URLSearchParams):Promise<RevenueRange>{
  const today=vnDate(Date.now()),from=params.get("from")??today,to=params.get("to")??today;
  const fromTime=parseDate(from),toTime=parseDate(to),days=(toTime-fromTime)/DAY+1;
  if(days<1)throw new OrderError("Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.");
@@ -69,7 +69,7 @@ function summaryFrom(row:SummaryRow|undefined):RevenueSummary{
 }
 
 export async function revenueReport(params:URLSearchParams):Promise<RevenueReport>{
- const range=await getRange(params),db=database(),created=where("created_at",range,range.tableId),paid=where("paid_at",range,range.tableId);
+ const range=await getRevenueRange(params),db=database(),created=where("created_at",range,range.tableId),paid=where("paid_at",range,range.tableId);
  const tableClause=range.tableId?" AND table_id = ?":"",tableValues=range.tableId?[range.tableId]:[];
  // D1 executes a batch in one transaction. Totals, daily series and payment
  // splits therefore describe the same snapshot while the restaurant is busy.
@@ -127,7 +127,7 @@ export async function revenueReport(params:URLSearchParams):Promise<RevenueRepor
 }
 
 export async function revenueOrders(params:URLSearchParams):Promise<RevenueOrderPage>{
- const range=await getRange(params),basis=params.get("basis")??"created",status=params.get("status")??"all",payment=params.get("payment")??"all",pageText=params.get("page")??"1";
+ const range=await getRevenueRange(params),basis=params.get("basis")??"created",status=params.get("status")??"all",payment=params.get("payment")??"all",pageText=params.get("page")??"1";
  if(!(["created","paid"] as RevenueOrderBasis[]).includes(basis as RevenueOrderBasis))throw new OrderError("Cách lọc thời gian không hợp lệ.");
  if(!(["all","paid","unpaid","cancelled"] as RevenueOrderStatus[]).includes(status as RevenueOrderStatus))throw new OrderError("Trạng thái thanh toán không hợp lệ.");
  if(payment!=="all"&&!METHODS.includes(payment as PaymentMethod))throw new OrderError("Phương thức thanh toán không hợp lệ.");

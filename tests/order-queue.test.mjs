@@ -50,6 +50,7 @@ const sampleOrders = [
   {
     id: "ord-old",
     code: "OD001",
+    dining_session_id:"session-1",
     table_id: "1",
     table_name: "Bàn 01",
     customer_name: "Khách An",
@@ -63,6 +64,7 @@ const sampleOrders = [
   {
     id: "ord-mid",
     code: "OD002",
+    dining_session_id:"session-2",
     table_id: "2",
     table_name: "Bàn 02",
     customer_name: "Khách Bình",
@@ -75,6 +77,7 @@ const sampleOrders = [
   {
     id: "ord-recent",
     code: "OD003",
+    dining_session_id:"session-1",
     table_id: "1",
     table_name: "Bàn 01",
     customer_name: "Khách Chi",
@@ -102,7 +105,8 @@ test("OrderQueue: renders FIFO order sequence and wait time indicators", () => {
   const posRecent = html.indexOf("#OD003");
   assert.ok(posOld !== -1 && posMid !== -1 && posRecent !== -1);
   assert.ok(posOld < posMid, "Oldest order #OD001 should appear before #OD002");
-  assert.ok(posMid < posRecent, "Order #OD002 should appear before #OD003");
+  assert.ok(posRecent < posMid, "Calls from the same visit stay together inside one table card");
+  assert.equal((html.match(/class="oq-card /g)||[]).length,2);
 
   // Check urgency classes for wait times
   assert.ok(html.includes("urgent"), "Order waiting > 15m should have urgent class");
@@ -127,7 +131,7 @@ test("OrderQueue: Single CTA transition with no synthetic hoàn tất status", (
     onCancel: () => {},
     onViewOrder: () => {},
   });
-  assert.ok(htmlNew.includes("Nhận &amp; làm") || htmlNew.includes("Nhận & làm"), "New order must have Nhận & làm CTA");
+  assert.ok(htmlNew.includes("Nhận 2 suất"), "New items have one table-level receive action");
 
   // Test 'preparing' status order has 'Sẵn sàng' button
   const prepOrder = [{ ...sampleOrders[0], status: "preparing" }];
@@ -139,7 +143,7 @@ test("OrderQueue: Single CTA transition with no synthetic hoàn tất status", (
     onCancel: () => {},
     onViewOrder: () => {},
   });
-  assert.ok(htmlPrep.includes("Sẵn sàng"), "Preparing order must have Sẵn sàng CTA");
+  assert.ok(htmlPrep.includes("Đã phục vụ 2 suất"), "Preparing items belong to the waiting-to-serve stage");
 
   // Test 'ready' status order has 'Đã phục vụ' button
   const readyOrder = [{ ...sampleOrders[0], status: "ready" }];
@@ -187,7 +191,7 @@ test("OrderQueue: Kitchen staff without money permissions cannot see money total
     onCancel: () => {},
     onViewOrder: () => {},
   });
-  assert.ok(htmlCashier.includes("120.000") || htmlCashier.includes("120,000"), "Cashier view should show order total");
+  assert.ok(htmlCashier.includes("Chi tiết bàn"), "Cashier opens the session bill instead of duplicated queue totals");
 });
 
 test("OrderQueue: Granular busy state only disables mutating order, not entire queue", () => {
@@ -210,7 +214,7 @@ test("OrderQueue: Granular busy state only disables mutating order, not entire q
   assert.ok(disabledButtons >= 1, "Busy order must have disabled button");
   // There are other active buttons that are NOT disabled
   const totalActionButtons = (html.match(/oq-btn-cta/g) || []).length;
-  assert.equal(totalActionButtons, 3, "All 3 orders should have their CTA button rendered");
+  assert.equal(totalActionButtons, 2, "One action per table/visit, while another table remains usable");
 });
 
 test("OpenTableBoard: granular isBusy does not freeze entire table board", () => {
@@ -249,4 +253,35 @@ test("OpenTableBoard: granular isBusy does not freeze entire table board", () =>
   // Check that not ALL buttons are disabled
   const enabledButtons = (html.match(/<button(?![^>]*disabled)/g) || []).length;
   assert.ok(enabledButtons > 0, "Non-busy items must remain interactive and clickable");
+});
+
+const {groupQueueOrders,queueActions,queueQuantity}=load("lib/grouped-order-queue.ts");
+test("one table card groups repeat calls only within the same dining session",()=>{
+ const base={...sampleOrders[0],items:[{itemId:"tea",name:"Trà",quantity:1,unitPrice:35000,total:35000,extras:[],taste:"",note:""}]};
+ const grouped=groupQueueOrders([{...base,id:"first",dining_session_id:"visit-a"},{...base,id:"later",dining_session_id:"visit-a",created_at:base.created_at+1000},{...base,id:"old-visit",dining_session_id:"visit-b"},{...base,id:"legacy",dining_session_id:null}]);
+ assert.equal(grouped.length,3);
+ assert.equal(grouped.find(group=>group.sessionId==="visit-a").orders.length,2);
+ assert.equal(queueQuantity(grouped.find(group=>group.sessionId==="visit-a").stages.new),2);
+});
+
+test("partially served lines use exactly three queue states without losing new calls or cancelled history",()=>{
+ const base={...sampleOrders[0],dining_session_id:"visit-a",items:[{itemId:"tea",name:"Trà",orderLineId:"tea-line",quantity:5,unitPrice:35000,total:175000,extras:[],taste:"",note:"Ít đá",newCount:1,preparingCount:1,readyCount:1,servedCount:2}]};
+ const [group]=groupQueueOrders([{...base,id:"first"},{...base,id:"cancelled",status:"cancelled",created_at:base.created_at+1000},{...base,id:"last",created_at:base.created_at+2000}]);
+ assert.equal(queueQuantity(group.stages.new),2);
+ assert.equal(queueQuantity(group.stages.waiting),4);
+ assert.equal(queueQuantity(group.stages.served),4);
+ assert.equal(group.stages.new.at(-1).round,3,"cancelled calls do not renumber later rounds");
+ const actions=queueActions(group,"waiting");
+ assert.ok(actions.every(action=>action.to==="served"&&["preparing","ready"].includes(action.line.from)));
+ assert.equal(actions.some(action=>action.line.order.id==="cancelled"),false);
+ assert.deepEqual(queueActions(group,"served"),[]);
+});
+
+test("queue UI has three filters, preserves required notes and can hide all area labels",()=>{
+ const html=render(OrderQueue,{orders:sampleOrders,tables,permissions:["orders.view"],showZones:false,onOrderStatus:async()=>true,onCancel:()=>{},onViewOrder:()=>{}});
+ assert.equal((html.match(/class="oq-filter-btn /g)||[]).length,3);
+ assert.match(html,/Cần nhận/);assert.match(html,/Chờ phục vụ/);assert.match(html,/Đã phục vụ/);
+ assert.doesNotMatch(html,/oq-zone-select|oq-zone-badge|Tầng 1|Tầng 2/);
+ assert.match(html,/Khách dị ứng ớt/);
+ assert.doesNotMatch(html,/class="oq-btn-cta/);
 });

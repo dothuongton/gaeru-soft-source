@@ -23,11 +23,12 @@
 .app-shell[data-view="admin"] .aw-sound-banner{margin:0 0 16px}
 .app-shell[data-view="admin"] .aw-sound-banner>button{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 16px;border-radius:12px;background:#fffbeb;border:1.5px solid #f59e0b;color:#92400e;font-weight:600;font-size:14px;cursor:pointer;transition:background .15s}
 .app-shell[data-view="admin"] .aw-sound-banner>button:hover{background:#fef3c7}
-.app-shell[data-view="admin"] .aw-dot{position:absolute;right:7px;top:7px;width:6px;height:6px;background:#a57331;border-radius:50%}
+.app-shell[data-view="admin"] .aw-support-badge{position:absolute;right:-2px;top:0;display:flex;align-items:center;gap:3px;min-width:21px;height:18px;padding:0 4px;border:2px solid #fff;border-radius:12px;background:var(--aw-accent);color:var(--moc-on-accent,#fff);font-size:10px;line-height:14px;font-weight:700;font-variant-numeric:tabular-nums;pointer-events:none}
 .app-shell[data-view="admin"] .aw-nav{grid-area:nav;display:flex;align-items:stretch;justify-content:space-around;padding:6px 8px max(8px,env(safe-area-inset-bottom));border-top:1px solid var(--aw-line);background:#fff;z-index:30;min-height:0;overflow:hidden}
 .app-shell[data-view="admin"] .aw-nav>button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border-radius:10px;padding:5px 3px;color:var(--aw-muted);font-size:11px;line-height:1.2}
 .app-shell[data-view="admin"] .aw-nav>button>span:first-child{position:relative;display:flex;align-items:center}
 .app-shell[data-view="admin"] .aw-nav>button b{position:absolute;left:15px;top:-6px;min-width:15px;height:15px;padding:0 3px;border-radius:10px;font-size:10px;line-height:15px;background:var(--aw-accent);color:#fff;font-variant-numeric:tabular-nums}
+.app-shell[data-view="admin"] .aw-nav>button b.aw-support-badge{left:12px;right:auto;top:-7px;display:flex;gap:3px;min-width:24px;height:18px;padding:0 4px;line-height:14px}
 .app-shell[data-view="admin"] .aw-nav>button.active{color:var(--aw-accent);font-weight:650;background:var(--aw-soft)}
 .app-shell[data-view="admin"] .aw-content{grid-area:content;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding:22px 16px 28px;-webkit-overflow-scrolling:touch;overflow-anchor:none}
 .app-shell[data-view="admin"] .aw-content :is(h1,h2,h3,p){margin-top:0}
@@ -227,6 +228,8 @@ body:has(.admin-workspace) .pwa-update-banner>button{flex-shrink:0;min-height:44
 
 .app-shell[data-view="admin"] .aw-push-control{position:relative;display:flex;flex-shrink:0}
 .app-shell[data-view="admin"] .aw-push-control>button,.app-shell[data-view="admin"] .aw-push-control>div>button{display:flex;align-items:center;justify-content:center;width:40px;min-width:40px;height:44px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--aw-accent)}
+.app-shell[data-view="admin"] .aw-push-control>button,.app-shell[data-view="admin"] .aw-push-control>div>button{position:relative}
+.app-shell[data-view="admin"] .aw-push-enabled{position:absolute;right:6px;top:8px;width:7px;height:7px;border:1px solid #fff;border-radius:50%;background:var(--aw-accent)}
 .app-shell[data-view="admin"] .aw-push-control>button>span,.app-shell[data-view="admin"] .aw-push-control>div>button>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .app-shell[data-view="admin"] .aw-push-control [role="menu"]{position:absolute;right:0;top:48px;width:240px;padding:10px;background:white;border:1px solid var(--aw-line);border-radius:12px;box-shadow:0 6px 20px #0002;z-index:50}
 .app-shell[data-view="admin"] .aw-push-control [role="menu"] button{display:flex;gap:8px;align-items:center;width:100%;padding:8px;text-align:left;font-size:13px}
@@ -271,3 +274,19 @@ body:has(.admin-workspace) .pwa-update-banner>button{flex-shrink:0;min-height:44
 .app-shell[data-view="admin"] .aw-startup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .app-shell[data-view="admin"] .aw-startup-grid>div{height:150px;border:1px solid var(--aw-line);border-radius:12px;background:#fff}
 @media(min-width:768px){.app-shell[data-view="admin"] .aw-startup-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.app-shell[data-view="admin"] .zone-management{max-width:820px;display:grid;gap:16px}
+.app-shell[data-view="admin"] .zone-management>p{margin:0;color:var(--aw-muted)}
+.app-shell[data-view="admin"] .zone-display-toggle{display:flex;align-items:center;justify-content:space-between;gap:15px;background:#fff;border:1px solid var(--aw-line);padding:16px;border-radius:12px;min-height:70px}
+.app-shell[data-view="admin"] .zone-display-toggle small{display:block;font-size:12px;color:var(--aw-muted);margin-top:4px}
+.app-shell[data-view="admin"] .zone-display-toggle input{width:24px;min-width:24px;height:24px;accent-color:var(--aw-accent)}
+.app-shell[data-view="admin"] .zone-create{display:flex;align-items:end;gap:8px;flex-wrap:wrap}
+.app-shell[data-view="admin"] .zone-create label{display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px}
+.app-shell[data-view="admin"] .zone-management input:not([type="checkbox"]){border:1px solid var(--aw-line);border-radius:8px;padding:8px;min-width:0;width:100%;background:#fff;color:var(--aw-ink)}
+.app-shell[data-view="admin"] .zone-list{display:grid;gap:8px}
+.app-shell[data-view="admin"] .zone-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:12px;background:#fff;border:1px solid var(--aw-line);border-radius:10px}
+.app-shell[data-view="admin"] .zone-row>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .zone-row small{display:block;color:var(--aw-muted);font-size:12px;margin-top:3px}
+.app-shell[data-view="admin"] .zone-row>form{display:flex;gap:7px;width:100%;align-items:center}
+.app-shell[data-view="admin"] .zone-delete-confirm{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding-top:10px}
+.app-shell[data-view="admin"] .zone-delete-confirm>span{flex-basis:100%}
+.app-shell[data-view="admin"] .zone-delete-confirm button{border:1px solid var(--aw-line);padding:8px 12px;border-radius:8px}

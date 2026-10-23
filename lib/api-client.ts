@@ -10,10 +10,10 @@ const snapshots=new Map<string,{etag:string;data:unknown}>();
 let snapshotEpoch=0;
 
 /** A lost response does not prove a write failed. Callers can safely retain its request ID. */
-export async function api<T = {ok: boolean}>(path: string, options: RequestInit = {}): Promise<T> {
+export async function api<T = {ok: boolean}>(path: string, options: RequestInit = {}, storeId?: string): Promise<T> {
   const read=(options.method||"GET").toUpperCase()==="GET";
   if(!read){snapshots.clear();snapshotEpoch++;}
-  const epoch=snapshotEpoch,url=withStore("/api/"+path);
+  const epoch=snapshotEpoch,url=withStore("/api/"+path,storeId);
   const conditional=read&&(path.split("?")[0]==="menu"||path.split("?")[0]==="admin");
   const previous=conditional?snapshots.get(url):undefined;
   const controller = new AbortController();

@@ -1,0 +1,54 @@
+.app-shell[data-view="admin"] .paid-invoices-panel{max-width:1100px;margin:auto;display:grid;gap:14px}
+.app-shell[data-view="admin"] .invoice-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.app-shell[data-view="admin"] .invoice-toolbar p{font-size:12px;margin:0;color:var(--aw-muted)}
+.app-shell[data-view="admin"] .invoice-presets{display:flex;gap:7px;flex-wrap:wrap}
+.app-shell[data-view="admin"] .invoice-presets button{border:1px solid var(--aw-line);border-radius:8px;background:#fff;min-height:44px;padding:7px 13px;font-size:13px}
+.app-shell[data-view="admin"] .invoice-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:14px;border:1px solid var(--aw-line);border-radius:12px;background:#fff}
+.app-shell[data-view="admin"] .invoice-filters label{display:grid;gap:5px;min-width:0;font-size:12px}
+.app-shell[data-view="admin"] .invoice-filters input{width:100%;min-width:0;padding:8px;border:1px solid var(--aw-line);border-radius:7px;background:#fff;color:var(--aw-ink)}
+.app-shell[data-view="admin"] .invoice-filters .invoice-search,.app-shell[data-view="admin"] .invoice-hours,.app-shell[data-view="admin"] .invoice-filters>button{grid-column:1/-1}
+.app-shell[data-view="admin"] .invoice-hours summary{min-height:44px;display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer}
+.app-shell[data-view="admin"] .invoice-hours>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.app-shell[data-view="admin"] .invoice-period-total{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:14px;background:var(--aw-soft);border-radius:10px;font-size:14px}
+.app-shell[data-view="admin"] .invoice-period-total small{flex-basis:100%;font-size:11px;color:var(--aw-muted)}
+.app-shell[data-view="admin"] .invoice-day h3{font-size:14px;margin:0 0 8px}
+.app-shell[data-view="admin"] .invoice-row{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:14px 10px;background:#fff;border:1px solid var(--aw-line);border-radius:9px;margin-bottom:7px;min-width:0}
+.app-shell[data-view="admin"] .invoice-row>span{flex:1;min-width:0}
+.app-shell[data-view="admin"] .invoice-row>strong{font-size:14px;white-space:nowrap}
+.app-shell[data-view="admin"] .invoice-row span>strong{font-size:15px}
+.app-shell[data-view="admin"] .invoice-row small{display:block;font-size:11px;line-height:1.5;color:var(--aw-muted);overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .invoice-pagination{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.app-shell[data-view="admin"] .invoice-pagination label,.app-shell[data-view="admin"] .invoice-pagination>div{display:flex;gap:7px;align-items:center}
+.app-shell[data-view="admin"] .invoice-pagination select{border:1px solid var(--aw-line);border-radius:7px;padding:6px;background:#fff;font-size:14px}
+.app-shell[data-view="admin"] .invoice-empty{text-align:center;padding:22px;font-size:14px;color:var(--aw-muted)}
+.app-shell[data-view="admin"] .paid-invoice-detail{max-width:640px}
+.app-shell[data-view="admin"] .paid-invoice-detail-content{padding:16px;overflow:auto}
+.app-shell[data-view="admin"] .paid-invoice-order{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin:14px 0 7px;padding:7px;background:var(--aw-soft);border-radius:6px}
+.app-shell[data-view="admin"] .paid-invoice-line{display:grid;grid-template-columns:22px minmax(0,1fr) max-content;gap:7px;font-size:14px;padding:10px 0;border-bottom:1px solid var(--aw-line)}
+.app-shell[data-view="admin"] .paid-invoice-line strong{overflow-wrap:anywhere}
+.app-shell[data-view="admin"] .paid-invoice-line small{display:block;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--aw-muted);font-size:12px}
+.app-shell[data-view="admin"] .paid-invoice-detail-total{display:flex;justify-content:space-between;gap:8px;margin:16px 0;padding:12px 0;border-top:1px dashed var(--aw-line);font-size:17px}
+.app-shell[data-view="admin"] .invoice-note{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(min-width:850px){.app-shell[data-view="admin"] .invoice-filters{grid-template-columns:repeat(2,minmax(0,1fr)) 2fr auto;align-items:end}.app-shell[data-view="admin"] .invoice-filters .invoice-search,.app-shell[data-view="admin"] .invoice-filters>button{grid-column:auto}.app-shell[data-view="admin"] .invoice-hours{grid-column:1/-1;grid-row:2}}
+@media(max-width:350px){.app-shell[data-view="admin"] .invoice-row{gap:5px;padding:12px 8px}.app-shell[data-view="admin"] .invoice-row>svg:first-child{display:none}.app-shell[data-view="admin"] .invoice-row>strong{font-size:13px}}
+.app-shell[data-view="admin"] .invoice-custom-range{grid-column:1/-1}
+.app-shell[data-view="admin"] .invoice-custom-range>summary{display:flex;align-items:center;gap:6px;min-height:44px;cursor:pointer;font-size:13px;list-style:none}
+.app-shell[data-view="admin"] .invoice-custom-range>summary::-webkit-details-marker{display:none}
+.app-shell[data-view="admin"] .invoice-date-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:8px}
+.app-shell[data-view="admin"] .invoice-date-fields>.invoice-hours{grid-column:1/-1;grid-row:auto}
+@media(max-width:380px){.app-shell[data-view="admin"] .invoice-date-fields{grid-template-columns:minmax(0,1fr)}}
+@media(min-width:850px){.app-shell[data-view="admin"] .invoice-filters{grid-template-columns:minmax(0,1fr) auto}.app-shell[data-view="admin"] .invoice-custom-range{grid-column:1/-1;grid-row:1}.app-shell[data-view="admin"] .invoice-custom-range .invoice-hours{grid-column:1/-1}}
+/* Keep real invoice rows visible on a phone before opening optional filters. */
+.app-shell[data-view="admin"] .invoice-filters{grid-template-columns:minmax(0,1fr) auto;padding:10px;gap:8px}
+.app-shell[data-view="admin"] .invoice-filters .invoice-search{grid-column:1;position:relative}
+.app-shell[data-view="admin"] .invoice-search>span{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.app-shell[data-view="admin"] .invoice-filters>.invoice-search-submit{grid-column:2;grid-row:2;min-width:44px;padding:8px}
+.app-shell[data-view="admin"] .invoice-search-submit>span{display:none}
+.app-shell[data-view="admin"] .invoice-custom-range>summary{min-height:36px}
+.app-shell[data-view="admin"] .invoice-period-total{padding:10px;gap:4px}
+.app-shell[data-view="admin"] .invoice-pagination{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}
+.app-shell[data-view="admin"] .invoice-pagination>small{grid-column:1/-1;grid-row:2;color:var(--aw-muted);font-size:11px}
+.app-shell[data-view="admin"] .invoice-pagination>div{grid-column:2;grid-row:1}
+.app-shell[data-view="admin"] .invoice-pagination select{width:65px}
+@media(max-width:350px){.app-shell[data-view="admin"] .invoice-presets{gap:4px}.app-shell[data-view="admin"] .invoice-presets button{padding:7px 9px;font-size:12px}}
+@media(min-width:850px){.app-shell[data-view="admin"] .invoice-search-submit>span{display:inline}}

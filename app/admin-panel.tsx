@@ -53,7 +53,8 @@ import { AdminScreenAwake } from "./admin-screen-awake";
 import { DishImageField } from "./dish-image-field";
 import { ShopLogoField } from "./shop-logo-field";
 import { StoreSwitcher } from "./store-management";
-import { withStore } from "@/lib/store-links";
+import { activeStoreId, withStore } from "@/lib/store-links";
+import {staffNotificationKey} from "@/lib/staff-notification-preferences";
 import { hasPermission, type Permission, type StaffAccess } from "@/lib/staff-permissions";
 import { OpenTableBoard } from "./open-table-board";
 import { OrderQueue, type MutationOutcome } from "./order-queue";
@@ -101,6 +102,8 @@ import {
 import "./admin-workspace.css";
 
 // Lazy-loaded secondary panels to keep the operational admin bundle lean
+const PaidInvoicesPanel = lazy(() => import("./paid-invoices-panel").then(m=>({default:m.PaidInvoicesPanel})));
+const ZoneManagement = lazy(() => import("./zone-management").then(m=>({default:m.ZoneManagement})));
 const RevenuePanel = lazy(() => import("./revenue-panel").then(m => ({ default: m.RevenuePanel })));
 const StaffAccountsPanel = lazy(() => import("./staff-accounts-panel").then(m => ({ default: m.StaffAccountsPanel })));
 const StoreManagement = lazy(() => import("./store-management").then(m => ({ default: m.StoreManagement })));
@@ -157,10 +160,12 @@ export default function AdminPanel({
     { id: "order-list", label: "Đơn món", icon: UtensilsCrossed, allowed: canOrders },
     { id: "support", label: "Hỗ trợ", icon: Bell, allowed: canOrders },
     { id: "home", label: "Cài đặt", icon: Settings2, allowed: staff },
+    { id: "invoices", label: "Thống kê hóa đơn", icon: ReceiptText, allowed: canRevenue },
     { id: "revenue", label: "Doanh thu", icon: ChartNoAxesCombined, allowed: canRevenue },
     { id: "menu", label: "Thực đơn", icon: UtensilsCrossed, allowed: canMenu },
     { id: "promotions", label: "Khuyến mãi", icon: Settings2, allowed: canMenu },
     { id: "tables", label: "Quản lý bàn", icon: QrCode, allowed: canTables },
+    { id: "zones", label: "Quản lý khu vực", icon: Settings2, allowed: canTables },
     { id: "settings", label: "Cài đặt quán", icon: Settings2, allowed: canSettings },
     { id: "accounts", label: "Tài khoản", icon: UsersRound, allowed: staff },
   ].filter(item => item.allowed);
@@ -199,7 +204,7 @@ export default function AdminPanel({
 
   useEffect(() => {
     const target = new URLSearchParams(window.location.search).get("tab");
-    if (target && ["stores", "orders", "order-list", "support", "home", "revenue", "menu", "promotions", "tables", "settings", "accounts"].includes(target))
+    if (target && ["stores", "orders", "order-list", "support", "home", "revenue", "invoices", "menu", "promotions", "tables", "zones", "settings", "accounts"].includes(target))
       setTab(target);
     setTabReady(true);
   }, []);
@@ -220,7 +225,7 @@ export default function AdminPanel({
 
   const [focusTableId, setFocusTableId] = useState<string | null>(null),
     [focusRevision, setFocusRevision] = useState(0);
-  const notifications = useAdminOrderAlerts(displaySettings.popupSeconds);
+  const notifications = useAdminOrderAlerts(displaySettings.popupSeconds, staffNotificationKey(activeStoreId(),access?.userId??null));
   const alertUserId = useRef(access?.userId ?? null);
 
   function openTable(tableId: string) {
@@ -368,6 +373,7 @@ export default function AdminPanel({
         : ({
             session: "tables.manage",
             table: "tables.manage",
+            zones: "tables.manage",
             call: "tables.manage",
             item: "menu.manage",
             promotion: "menu.manage",
@@ -563,7 +569,7 @@ export default function AdminPanel({
         setKeepAwake(true);
       }}
       soundMode={notifications.soundMode}
-      pushControl={<AdminPushToggle notify={notify} iconOnly />}
+      pushControl={<AdminPushToggle notify={notify} userId={access?.userId??null} iconOnly />}
       soundReady={notifications.soundReady}
       canOrders={canOrders}
       canTables={canTables}
@@ -598,8 +604,8 @@ export default function AdminPanel({
             <AdminSettingsHome
               tabs={[...adminTabs].sort(
                 (a, b) =>
-                  ["tables", "menu", "settings", "promotions", "revenue", "accounts", "stores"].indexOf(a.id) -
-                  ["tables", "menu", "settings", "promotions", "revenue", "accounts", "stores"].indexOf(b.id)
+                  ["tables", "zones", "menu", "settings", "promotions", "invoices", "revenue", "accounts", "stores"].indexOf(a.id) -
+                  ["tables", "zones", "menu", "settings", "promotions", "invoices", "revenue", "accounts", "stores"].indexOf(b.id)
               )}
               onSwitch={switchAdminTab}
               collected={data.stats.todayCollected}
@@ -616,6 +622,9 @@ export default function AdminPanel({
                 tables={data.tables}
                 permissions={access?.permissions ?? []}
                 onOrderStatus={(order, next) => mutateWithOutcome("order", { id: order.id, status: next }, "Đã cập nhật trạng thái đơn.", `order:${order.id}`)}
+                onLineStatus={(order,orderLineId,toStatus,count,fromStatus)=>mutateWithOutcome("order",{id:order.id,orderLineId,action:"line_transition",toStatus,count,fromStatus},"Đã cập nhật món.",`order:${order.id}`)}
+                onOpenTable={openTable}
+                showZones={data.zoneSettings?.enabled!==false}
                 onCancel={order => {
                   setCancelOrder(order);
                   setReason("");
@@ -631,6 +640,7 @@ export default function AdminPanel({
             ) : (
               <OpenTableBoard
                 key={tab}
+                showZones={data.zoneSettings?.enabled!==false}
                 mode={tab === "support" ? "support" : "tables"}
                 initialView={tab === "orders" ? "matrix" : "manage"}
                 permissions={access?.permissions ?? []}
@@ -645,7 +655,7 @@ export default function AdminPanel({
                 focusRevision={focusRevision}
                 onSessionAction={sessionAction}
                 onOrderStatus={(order, next) => mutate("order", { id: order.id, status: next }, "Đã cập nhật trạng thái đơn.", `order:${order.id}`)}
-                onLineStatus={(orderId, orderLineId, toStatus, count) => mutate("order", { id: orderId, orderLineId, action: "line_transition", toStatus, count }, "Đã cập nhật tiến độ món.", `order:${orderId}`)}
+                onLineStatus={(orderId, orderLineId, toStatus, count,fromStatus) => mutate("order", { id: orderId, orderLineId, action: "line_transition", toStatus, count,fromStatus }, "Đã cập nhật tiến độ món.", `order:${orderId}`)}
                 onResolveCall={call => mutate("call", { id: call.id, createdAt: call.created_at }, "Đã xác nhận hỗ trợ bàn.", `call:${call.id}`)}
                 onTransfer={setTransferSession}
                 onCollect={openPayment}
@@ -782,6 +792,8 @@ export default function AdminPanel({
               {!data.items.length && <p>Thêm món trong Thực đơn trước khi cài khuyến mại.</p>}
             </section>
           )}
+          {tab === "invoices" && canRevenue && <Suspense fallback={<p>Đang tải thống kê hóa đơn…</p>}><PaidInvoicesPanel shopName={shop.name}/></Suspense>}
+          {tab === "zones" && canTables && <Suspense fallback={<p>Đang tải khu vực…</p>}><ZoneManagement value={data.zoneSettings??{enabled:true,names:[...new Set(data.tables.map(table=>table.zone))],version:"initial"}} tables={data.tables} onSave={body=>mutate("zones",body,"Đã cập nhật khu vực.")}/></Suspense>}
           {tab === "tables" && canTables && (
             <TableManagement
               tables={data.tables}
@@ -797,7 +809,7 @@ export default function AdminPanel({
                   id: "",
                   token: "",
                   name: "Bàn " + String(Math.max(0, ...data.tables.map(t => Number(t.id) || 0)) + 1).padStart(2, "0"),
-                  zone: "Sảnh chính",
+                  zone: data.zoneSettings?.names[0]||"Sảnh chính",
                   creationRequestId: crypto.randomUUID(),
                 })
               }
@@ -1052,7 +1064,7 @@ export default function AdminPanel({
             </label>
             <label className="field">
               <span>Khu vực</span>
-              <input name="zone" defaultValue={editTable.zone} required maxLength={40} />
+              <input name="zone" list="managed-zone-names" defaultValue={editTable.zone} required maxLength={40} /><datalist id="managed-zone-names">{data?.zoneSettings?.names.map(name=><option value={name} key={name}/>)}</datalist>
             </label>
             {mutationError && (
               <p className="submission-error" role="alert">

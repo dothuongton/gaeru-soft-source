@@ -291,9 +291,9 @@ test("OpenTableBoard table detail sheet renders both tabs, portion counts, and g
   const plain = text(html);
 
   // Verifies header details
-  assert.ok(plain.includes("Chi tiết Bàn 01"), "Renders detail modal title");
+  assert.ok(plain.includes("Hóa đơn · Bàn 01"), "Renders detail modal title");
   assert.ok(plain.includes("Anh Tuấn"), "Renders customer name");
-  assert.ok(plain.includes("3 loại món"), "Counts distinct items");
+  assert.match(html, /Món \/ ghi chú/);
   assert.ok(plain.includes("3 suất"), "Counts total portions");
   assert.ok(plain.includes("2 lượt gọi"), "Counts valid rounds");
 
@@ -302,12 +302,17 @@ test("OpenTableBoard table detail sheet renders both tabs, portion counts, and g
   assert.ok(plain.includes("Theo lượt gọi"), "Contains Theo lượt gọi tab");
 
   // Verifies quick CTA when preparing items exist
-  assert.ok(plain.includes("Sẵn sàng tất cả đang làm (1 suất)"), "Provides quick ready CTA");
+  assert.ok(plain.includes("Cập nhật món"), "Keeps preparation actions behind a compact disclosure");
 
   // Verifies footer settlement details
-  assert.ok(plain.includes("Còn cần thu") && plain.includes("35.000 ₫"), "Highlights remaining unpaid balance");
-  assert.ok(plain.includes("Thanh toán cả bàn (35.000 ₫)"), "Provides settle entire table CTA");
+  assert.ok(plain.includes("Cần thu") && plain.includes("35.000 ₫"), "Highlights remaining unpaid balance");
+  assert.ok(plain.includes("Thanh toán cả bàn"), "Provides settle entire table CTA");
+  assert.equal((html.match(/class="primary otb-bill-pay"/g)||[]).length,1);
+  assert.doesNotMatch(plain,/Thanh toán lần này/);
   assert.ok(plain.includes("Đổi bàn"), "Provides transfer table CTA");
   assert.ok(plain.includes("Đóng bàn"), "Provides close table CTA");
-  assert.ok(plain.includes("Còn 1 đơn chưa phục vụ xong hoặc chưa thanh toán"), "Guards table closure");
+  assert.ok(plain.includes("Chỉ đóng bàn khi phục vụ xong và đã thu đủ tiền"), "Guards table closure");
+  assert.ok(plain.includes("1 suất chưa phục vụ xong"));
+  assert.ok(plain.includes("Ghi chú lượt 2: Cho ít muối"));
+  assert.ok(plain.includes("Đơn giá 35.000 ₫"));
 });

@@ -1,349 +1,118 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowRight, Check, ChefHat, Clock3, Eye, Flame, History, LoaderCircle, ReceiptText, UtensilsCrossed, X } from "lucide-react";
-import { money, statuses, type DiningTable, type Order, type OrderStatus } from "@/lib/menu";
-import type { Permission } from "@/lib/staff-permissions";
+import {useEffect,useId,useMemo,useRef,useState} from "react";
+import {AlertCircle,ArrowRight,Check,ChevronDown,Clock3,LoaderCircle,ReceiptText,UtensilsCrossed} from "lucide-react";
+import {canCancelOrder,normalizeOrderItem,type DiningTable,type Order,type OrderStatus} from "@/lib/menu";
+import type {Permission} from "@/lib/staff-permissions";
+import {groupQueueOrders,queueActions,queueQuantity,type QueueStage,type QueueLine,type QueueGroup} from "@/lib/grouped-order-queue";
 import "./order-queue.css";
 
-export type OrderQueueFilter = "all" | "new" | "preparing" | "ready" | "history";
-
-export type MutationOutcome =
-  | { state: "confirmed" }
-  | { state: "uncertain"; message: string }
-  | { state: "rejected"; message: string }
-  | { state: "committed_stale"; message: string }
-  | boolean;
-
-export type OrderQueueProps = {
-  orders: Order[];
-  tables: DiningTable[];
-  permissions: Permission[];
-  onOrderStatus: (order: Order, next: OrderStatus) => Promise<MutationOutcome>;
-  onCancel: (order: Order) => void;
-  onViewOrder: (order: Order) => void;
-  isBusy?: (id: string) => boolean;
-  focusOrderId?: string | null;
-  onFocusHandled?: () => void;
-  initialFilter?: OrderQueueFilter;
+export type OrderQueueFilter=QueueStage;
+export type MutationOutcome={state:"confirmed"}|{state:"uncertain";message:string}|{state:"rejected";message:string}|{state:"committed_stale";message:string}|boolean;
+export type OrderQueueProps={
+ orders:Order[];tables:DiningTable[];permissions:Permission[];
+ onOrderStatus:(order:Order,next:OrderStatus)=>Promise<MutationOutcome>;
+ onLineStatus?:(order:Order,lineId:string,to:OrderStatus,count:number,from:QueueLine["from"])=>Promise<MutationOutcome>;
+ onCancel:(order:Order)=>void;onViewOrder:(order:Order)=>void;onOpenTable?:(tableId:string)=>void;
+ isBusy?:(id:string)=>boolean;focusOrderId?:string|null;onFocusHandled?:()=>void;initialFilter?:OrderQueueFilter;showZones?:boolean;
 };
+const time=(value:number)=>new Intl.DateTimeFormat("vi-VN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Ho_Chi_Minh"}).format(new Date(value));
+const choices=[{id:"new",label:"Cần nhận"},{id:"waiting",label:"Chờ phục vụ"},{id:"served",label:"Đã phục vụ"}] as const;
 
-const orderTime = (value: number) => new Intl.DateTimeFormat("vi-VN", {
-  hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh",
-}).format(new Date(value));
+export function OrderQueue({orders,tables,permissions,onOrderStatus,onLineStatus,onCancel,onViewOrder,onOpenTable,isBusy,focusOrderId,onFocusHandled,initialFilter,showZones=true}:OrderQueueProps){
+ const groups=useMemo(()=>groupQueueOrders(orders),[orders]);
+ const [filter,setFilter]=useState<QueueStage>(()=>initialFilter??(groups.some(group=>group.stages.new.length)?"new":groups.some(group=>group.stages.waiting.length)?"waiting":"served"));
+ const [zone,setZone]=useState("all"),[now,setNow]=useState(()=>Date.now());
+ const [busyGroups,setBusyGroups]=useState<Set<string>>(new Set());
+ const locks=useRef(new Set<string>());
+ const [blocked,setBlocked]=useState<Map<string,QueueLine>>(new Map());
+ const [error,setError]=useState("");
+ const titleId=useId(),focusHandled=useRef<string|null>(null);
+ const canManage=permissions.includes("orders.manage"),canCancel=permissions.includes("orders.cancel");
+ const zoneMap=useMemo(()=>new Map(tables.map(table=>[table.id,table.zone])),[tables]);
+ const zones=[...new Set(tables.map(table=>table.zone).filter(Boolean))];
+ const scoped=groups.filter(group=>!showZones||zone==="all"||zoneMap.get(group.tableId)===zone);
+ const counts=Object.fromEntries(choices.map(choice=>[choice.id,scoped.filter(group=>group.stages[choice.id].length>0).length])) as Record<QueueStage,number>;
+ const visible=scoped.filter(group=>group.stages[filter].length>0).sort((a,b)=>filter==="served"?b.stages.served.at(-1)!.order.created_at-a.stages.served.at(-1)!.order.created_at:a.stages[filter][0].order.created_at-b.stages[filter][0].order.created_at||a.key.localeCompare(b.key));
+ useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),30000);return()=>clearInterval(timer);},[]);
 
-export function OrderQueue({
-  orders,
-  tables,
-  permissions,
-  onOrderStatus,
-  onCancel,
-  onViewOrder,
-  isBusy,
-  focusOrderId,
-  onFocusHandled,
-  initialFilter,
-}: OrderQueueProps) {
-  const [filter, setFilter] = useState<OrderQueueFilter>(() => {
-    if (initialFilter) return initialFilter;
-    const hasNew = orders.some(o => o.status === "new");
-    return hasNew ? "new" : "all";
+ // A cached outcome never authorizes replay. Only changed source quantities
+ // in a fresh server snapshot release this line for another action.
+ const blockedKeys=new Set([...blocked].filter(([,line])=>{
+  const current=orders.find(order=>order.id===line.order.id);
+  const item=current?.items.map((item,index)=>normalizeOrderItem(item,current.status,index)).find(item=>item.orderLineId===line.lineId);
+  const source=item?.[(line.from+"Count") as "newCount"|"preparingCount"|"readyCount"|"servedCount"];
+  return current?.status!=="cancelled"&&source!==undefined&&source>=line.quantity;
+ }).map(([key])=>key));
+
+ useEffect(()=>{
+  if(!focusOrderId||focusHandled.current===focusOrderId)return;
+  const group=groups.find(group=>group.orders.some(order=>order.id===focusOrderId));
+  if(!group)return;
+  const stage=choices.find(choice=>group.stages[choice.id].some(line=>line.order.id===focusOrderId))?.id;
+  if(!stage){focusHandled.current=focusOrderId;onFocusHandled?.();return;}
+  const frame=requestAnimationFrame(()=>{
+   if(filter!==stage||zone!=="all") {setFilter(stage);setZone("all");return;}
+   const element=document.getElementById(titleId+group.key);
+   if(!element)return;
+   element.scrollIntoView({block:"center",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth"});
+   focusHandled.current=focusOrderId;onFocusHandled?.();
   });
-  const [zone, setZone] = useState("all");
-  const [now, setNow] = useState(Date.now());
-  const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
-  const [uncertainOrderIds, setUncertainOrderIds] = useState<Set<string>>(new Set());
-  const [actionError, setActionError] = useState("");
-  const headingId = useId();
+  return()=>cancelAnimationFrame(frame);
+ },[focusOrderId,groups,filter,zone,onFocusHandled,titleId]);
 
-  const canManageOrders = permissions.includes("orders.manage");
-  const canCancelOrders = permissions.includes("orders.cancel");
-  const canSeeMoney = permissions.includes("payments.collect") || permissions.includes("revenue.view");
-
-  // Client-side timer to update wait times without API polling
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const tableZoneMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const t of tables) map.set(t.id, t.zone);
-    return map;
-  }, [tables]);
-
-  // Select filter and scroll to focused order if specified (consumed once per request)
-  const lastFocusedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!focusOrderId || lastFocusedRef.current === focusOrderId) return;
-    const targetOrder = orders.find(o => o.id === focusOrderId);
-    if (targetOrder) {
-      lastFocusedRef.current = focusOrderId;
-      const targetZone = tableZoneMap.get(targetOrder.table_id);
-      if (zone !== "all" && targetZone && targetZone !== zone) {
-        setZone("all");
-      }
-      if (targetOrder.status === "new") setFilter("new");
-      else if (targetOrder.status === "preparing") setFilter("preparing");
-      else if (targetOrder.status === "ready") setFilter("ready");
-      else setFilter("history");
-
-      requestAnimationFrame(() => {
-        const element = document.getElementById("order-card-" + focusOrderId);
-        if (element) {
-          element.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      });
-      onFocusHandled?.();
+ async function advance(group:QueueGroup){
+  const actions=queueActions(group,filter);
+  if(!canManage||!actions.length||locks.current.has(group.key)||actions.some(({line})=>blockedKeys.has(line.key)||isBusy?.(line.order.id)))return;
+  locks.current.add(group.key);setBusyGroups(new Set(locks.current));setError("");
+  try{
+   for(const {line,to} of actions){
+    // Keep API transitions exact to this snapshot. New calls received while
+    // this batch runs are intentionally absent from this list.
+    let outcome:MutationOutcome;
+    try{
+     if(onLineStatus)outcome=await onLineStatus(line.order,line.lineId,to,line.quantity,line.from);
+     else if(filter==="new"&&line.order.status==="new"&&line.order.items.length===1)outcome=await onOrderStatus(line.order,"preparing");
+     else {setError("Chưa có cập nhật theo món. Mở hóa đơn bàn để xử lý an toàn.");break;}
+    }catch{outcome={state:"uncertain",message:"Kết nối bị gián đoạn; đang chờ đối chiếu."};}
+    if(typeof outcome==="object"&&outcome.state!=="confirmed"){
+     if(outcome.state!=="rejected")setBlocked(previous=>new Map(previous).set(line.key,line));
+     setError(outcome.message||"Đang chờ dữ liệu xác nhận. Các món còn lại chưa được cập nhật.");break;
     }
-  }, [focusOrderId, orders, zone, tableZoneMap, onFocusHandled]);
+    if(outcome===false){setError("Chưa cập nhật được món. Các món còn lại được giữ nguyên.");break;}
+   }
+  }finally{locks.current.delete(group.key);setBusyGroups(new Set(locks.current));}
+ }
+ const renderLine=(line:QueueLine)=><div className="oq-item-row" key={line.key}>
+  <b className="oq-item-qty">{line.quantity}×</b><div className="oq-item-info"><strong className="oq-item-name">{line.name}</strong>
+   {line.note&&<small className="oq-item-extras">{line.note}</small>}
+   {line.order.note&&<small className="oq-item-order-note">Ghi chú lượt {line.round}: {line.order.note}</small>}
+   <small className="oq-item-origin">Lượt {line.round} · {time(line.order.created_at)} · #{line.order.code}{line.from==="ready"?" · Sẵn sàng":""}</small>
+  </div>
+ </div>;
 
-  const zones = useMemo(() => [...new Set(tables.map(t => t.zone).filter(Boolean))], [tables]);
-
-  const counts = useMemo(() => ({
-    all: orders.filter(o => o.status !== "served" && o.status !== "cancelled").length,
-    new: orders.filter(o => o.status === "new").length,
-    preparing: orders.filter(o => o.status === "preparing").length,
-    ready: orders.filter(o => o.status === "ready").length,
-    history: orders.filter(o => o.status === "served" || o.status === "cancelled").length,
-  }), [orders]);
-
-  // Default to 'all' if no 'new' orders
-  useEffect(() => {
-    if (filter === "new" && counts.new === 0 && counts.all > 0) {
-      setFilter("all");
-    }
-  }, [counts.new, counts.all, filter]);
-
-  const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
-      const orderZone = tableZoneMap.get(order.table_id) || "";
-      if (zone !== "all" && orderZone !== zone) return false;
-      if (filter === "new") return order.status === "new";
-      if (filter === "preparing") return order.status === "preparing";
-      if (filter === "ready") return order.status === "ready";
-      if (filter === "history") return order.status === "served" || order.status === "cancelled";
-      return order.status !== "served" && order.status !== "cancelled";
-    }).sort((a, b) => {
-      // History: newest first
-      if (filter === "history") return b.created_at - a.created_at || b.id.localeCompare(a.id);
-      // Active orders: FIFO oldest first
-      return a.created_at - b.created_at || a.id.localeCompare(b.id);
-    });
-  }, [orders, filter, zone, tableZoneMap]);
-
-  async function handleAdvance(order: Order) {
-    const nextStatus = statuses[order.status]?.next;
-    if (!nextStatus || !canManageOrders) return;
-    if (isItemBusy(order.id) || busyOrderId === order.id || uncertainOrderIds.has(order.id)) return;
-    setBusyOrderId(order.id);
-    setActionError("");
-    try {
-      const outcome = await onOrderStatus(order, nextStatus);
-      if (typeof outcome === "object" && outcome !== null) {
-        if (outcome.state === "uncertain") {
-          setUncertainOrderIds(prev => new Set(prev).add(order.id));
-          setActionError("Chưa nhận được xác nhận từ máy chủ cho đơn #" + order.code + ". Hệ thống đang tự động đối chiếu.");
-        } else if (outcome.state === "rejected") {
-          setActionError(outcome.message || "Chưa cập nhật được đơn #" + order.code + ".");
-        } else {
-          setUncertainOrderIds(prev => {
-            if (!prev.has(order.id)) return prev;
-            const next = new Set(prev);
-            next.delete(order.id);
-            return next;
-          });
-        }
-      } else if (!outcome) {
-        setActionError("Chưa cập nhật được đơn #" + order.code + ".");
-      }
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Thao tác thất bại.");
-    } finally {
-      setBusyOrderId(null);
-    }
-  }
-
-  const isItemBusy = (orderId: string) => (isBusy ? isBusy(orderId) : false) || busyOrderId === orderId;
-
-  return (
-    <section className="order-queue-panel" aria-labelledby={headingId}>
-      <header className="oq-header">
-        <div className="oq-heading-row">
-          <h2 id={headingId}>Hàng đợi đơn món</h2>
-          {zones.length > 1 && (
-            <label className="oq-zone-select">
-              <span>Khu vực</span>
-              <select value={zone} onChange={e => setZone(e.target.value)}>
-                <option value="all">Tất cả khu vực</option>
-                {zones.map(z => <option key={z} value={z}>{z}</option>)}
-              </select>
-            </label>
-          )}
-        </div>
-
-        <div className="oq-filter-bar" role="group" aria-label="Lọc đơn món">
-          {([
-            { id: "new", label: "Cần nhận", count: counts.new, attention: counts.new > 0 },
-            { id: "preparing", label: "Đang làm", count: counts.preparing, attention: false },
-            { id: "ready", label: "Chờ phục vụ", count: counts.ready, attention: false },
-            { id: "all", label: "Tất cả", count: counts.all, attention: false },
-            { id: "history", label: "Lịch sử", count: counts.history, attention: false },
-          ] as const).map(option => (
-            <button
-              type="button"
-              key={option.id}
-              className={"oq-filter-btn " + (filter === option.id ? "selected " : "") + (option.attention ? "has-attention" : "")}
-              aria-pressed={filter === option.id}
-              onClick={() => setFilter(option.id)}
-            >
-              <span>{option.label}</span>
-              <b>{option.count}</b>
-            </button>
-          ))}
-        </div>
-      </header>
-
-      {actionError && <p className="oq-error" role="alert">{actionError}</p>}
-
-      {filteredOrders.length === 0 ? (
-        <div className="oq-empty">
-          <UtensilsCrossed size={36} />
-          <h3>{filter === "new" ? "Không có đơn cần nhận" : filter === "preparing" ? "Không có món đang làm" : filter === "ready" ? "Không có món chờ phục vụ" : "Chưa có đơn món nào"}</h3>
-          <p>{filter === "new" ? "Khi khách gọi món, các đơn mới sẽ xuất hiện ngay tại đây theo thứ tự gọi trước làm trước." : "Chọn bộ lọc khác để xem tiến độ các đơn hàng."}</p>
-        </div>
-      ) : (
-        <div className="oq-grid">
-          {filteredOrders.map(order => {
-            const waitMinutes = Math.max(0, Math.floor((now - order.created_at) / 60_000));
-            const isUrgent = waitMinutes >= 15 && order.status !== "served" && order.status !== "cancelled";
-            const isWarning = waitMinutes >= 10 && !isUrgent && order.status !== "served" && order.status !== "cancelled";
-            const isUncertain = uncertainOrderIds.has(order.id);
-            const isOrderWorking = isItemBusy(order.id) || isUncertain;
-            const isFocused = focusOrderId === order.id;
-
-            return (
-              <article
-                key={order.id}
-                id={"order-card-" + order.id}
-                className={"oq-card " + order.status + (isUrgent ? " urgent" : isWarning ? " warning" : "") + (isFocused ? " focused" : "")}
-                aria-label={"Đơn " + order.code + " tại " + order.table_name}
-              >
-                <div className="oq-card-head">
-                  <div className="oq-head-meta">
-                    <span className="oq-table-name">{order.table_name}</span>
-                    {tableZoneMap.get(order.table_id) && <small className="oq-zone-badge">{tableZoneMap.get(order.table_id)}</small>}
-                    <span className="oq-order-code">#{order.code}</span>
-                  </div>
-
-                  <div className="oq-head-right">
-                    {isUncertain ? (
-                      <span className="oq-wait-badge warning" title="Chưa nhận được xác nhận từ máy chủ. Đang tự động đối chiếu.">
-                        <AlertCircle size={13} />
-                        Đang đối chiếu…
-                      </span>
-                    ) : order.status !== "served" && order.status !== "cancelled" ? (
-                      <span className={"oq-wait-badge" + (isUrgent ? " urgent" : isWarning ? " warning" : "")}>
-                        {isUrgent ? <Flame size={13} /> : <Clock3 size={13} />}
-                        Chờ {waitMinutes}p
-                      </span>
-                    ) : (
-                      <span className={"status-badge " + order.status}>{statuses[order.status]?.short}</span>
-                    )}
-                  </div>
-                </div>
-
-                {order.customer_name && (
-                  <p className="oq-customer-name">Khách: <strong>{order.customer_name}</strong></p>
-                )}
-
-                <div className="oq-items">
-                  {order.items.map((item, idx) => (
-                    <div key={idx} className="oq-item-row">
-                      <b className="oq-item-qty">{item.quantity}×</b>
-                      <div className="oq-item-info">
-                        <span className="oq-item-name">{item.name}</span>
-                        {[...item.extras, item.taste, item.note].some(Boolean) && (
-                          <small className="oq-item-extras">
-                            {[...item.extras, item.taste, item.note].filter(Boolean).join(" · ")}
-                          </small>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {order.note && (
-                  <div className="oq-note" role="note">
-                    <AlertCircle size={14} />
-                    <span>Ghi chú: {order.note}</span>
-                  </div>
-                )}
-
-                {order.status === "cancelled" && order.cancel_reason && (
-                  <div className="oq-note cancelled" role="note">
-                    <span>Lý do hủy: {order.cancel_reason}</span>
-                  </div>
-                )}
-
-                <div className="oq-card-footer">
-                  <div className="oq-footer-info">
-                    <time dateTime={new Date(order.created_at).toISOString()}>{orderTime(order.created_at)}</time>
-                    {canSeeMoney && (
-                      <strong className="oq-total">{money(order.total)}</strong>
-                    )}
-                  </div>
-
-                  <div className="oq-actions">
-                    {canManageOrders && statuses[order.status]?.next && (
-                      <button
-                        type="button"
-                        className={"oq-btn-cta " + (order.status === "new" ? "primary" : order.status === "preparing" ? "preparing" : "ready")}
-                        disabled={isOrderWorking}
-                        onClick={() => void handleAdvance(order)}
-                      >
-                        {isUncertain ? (
-                          <><AlertCircle size={15} />Đang đối chiếu…</>
-                        ) : isOrderWorking ? (
-                          <><LoaderCircle size={15} className="spin" />Đang lưu…</>
-                        ) : order.status === "new" ? (
-                          <><Check size={16} />Nhận & làm</>
-                        ) : order.status === "preparing" ? (
-                          <><ChefHat size={16} />Sẵn sàng</>
-                        ) : (
-                          <><ArrowRight size={16} />Đã phục vụ</>
-                        )}
-                      </button>
-                    )}
-
-                    {canCancelOrders && (order.status === "new" || order.status === "preparing") && !order.paid && (
-                      <button
-                        type="button"
-                        className="oq-btn-cancel"
-                        disabled={isOrderWorking}
-                        onClick={() => onCancel(order)}
-                        aria-label={"Hủy đơn #" + order.code}
-                      >
-                        Hủy
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      className="oq-btn-detail icon-btn"
-                      onClick={() => onViewOrder(order)}
-                      aria-label={"Xem chi tiết đơn #" + order.code}
-                      title="Xem chi tiết đơn"
-                    >
-                      <Eye size={17} />
-                    </button>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
+ return <section className="order-queue-panel oq-grouped" aria-labelledby={titleId}>
+  <header className="oq-header"><div className="oq-heading-row"><h2 id={titleId}>Đơn món</h2>{showZones&&zones.length>1&&<label className="oq-zone-select"><span>Khu vực</span><select value={zone} onChange={event=>setZone(event.target.value)}><option value="all">Tất cả khu vực</option>{zones.map(zone=><option key={zone}>{zone}</option>)}</select></label>}</div>
+   <div className="oq-filter-bar" role="group" aria-label="Trạng thái đơn món">{choices.map(choice=><button type="button" key={choice.id} className={"oq-filter-btn "+(filter===choice.id?"selected":"")} aria-pressed={filter===choice.id} aria-label={choice.label+" · "+counts[choice.id]+" bàn"} onClick={()=>setFilter(choice.id)}><span>{choice.label}</span><b>{counts[choice.id]}</b></button>)}</div>
+  </header>
+  {error&&<p className="oq-error" role="alert">{error}</p>}
+  <p className="oq-summary">{visible.length} bàn · {visible.reduce((sum,group)=>sum+queueQuantity(group.stages[filter]),0)} suất · Gộp theo phiên bàn</p>
+  {visible.length?<div className="oq-grid">{visible.map(group=>{
+   const lines=group.stages[filter],quantity=queueQuantity(lines),waiting=Math.max(0,Math.floor((now-lines[0].order.created_at)/60000));
+   const uncertain=lines.some(line=>blockedKeys.has(line.key));
+   const busy=busyGroups.has(group.key)||lines.some(line=>isBusy?.(line.order.id));
+   const customer=group.orders.find(order=>order.customer_name)?.customer_name;
+   return <article key={group.key} id={titleId+group.key} className={"oq-card "+filter+(waiting>=15&&filter!=="served"?" urgent":waiting>=10&&filter!=="served"?" warning":"")} aria-label={group.name+" · "+choices.find(choice=>choice.id===filter)!.label}>
+    <div className="oq-card-head"><div className="oq-head-meta"><strong className="oq-table-name">{group.name}</strong>{showZones&&zoneMap.get(group.tableId)&&<small className="oq-zone-badge">{zoneMap.get(group.tableId)}</small>}</div>{filter!=="served"&&<span className={"oq-wait-badge"+(waiting>=15?" urgent":waiting>=10?" warning":"")}><Clock3 size={12}/>{waiting}p</span>}</div>
+    <p className="oq-customer-name">{customer||"Khách tại bàn"} · {new Set(lines.map(line=>line.order.id)).size} lượt · {quantity} suất</p>
+    <div className="oq-table-stages">{choices.map(choice=>{const qty=queueQuantity(group.stages[choice.id]);return qty?<span key={choice.id}>{qty} {choice.label.toLocaleLowerCase("vi-VN")}</span>:null;})}</div>
+    <div className="oq-items">{lines.slice(0,3).map(renderLine)}{lines.length>3&&<details className="oq-more-lines"><summary>+{lines.length-3} dòng món khác<ChevronDown size={14}/></summary>{lines.slice(3).map(renderLine)}</details>}</div>
+    {uncertain&&<p className="oq-reconciling"><AlertCircle size={14}/>Đang đối chiếu, chưa gửi lại thao tác.</p>}
+    <div className="oq-card-footer">{canManage&&filter!=="served"&&<button type="button" className="oq-btn-cta primary" disabled={busy||uncertain} onClick={()=>void advance(group)}>{busy?<LoaderCircle size={16} className="spin"/>:filter==="new"?<Check size={16}/>:<ArrowRight size={16}/>}<span>{busy?"Đang lưu…":uncertain?"Đang đối chiếu…":filter==="new"?"Nhận "+quantity+" suất":"Đã phục vụ "+quantity+" suất"}</span></button>}
+     <button type="button" className="oq-btn-table" onClick={()=>onOpenTable?onOpenTable(group.tableId):onViewOrder(group.orders[0])} aria-label={"Xem hóa đơn "+group.name}><ReceiptText size={17}/><span>Chi tiết bàn</span></button>
+    </div>
+    {canCancel&&group.orders.some(canCancelOrder)&&<details className="oq-more-lines oq-cancel-rounds"><summary>Hủy lượt gọi<ChevronDown size={14}/></summary>{group.orders.filter(canCancelOrder).map(order=><button type="button" key={order.id} disabled={busy||uncertain||isBusy?.(order.id)} onClick={()=>onCancel(order)}>Hủy lượt {group.orders.indexOf(order)+1} · #{order.code}</button>)}</details>}
+   </article>;
+  })}</div>:<div className="oq-empty"><UtensilsCrossed size={32}/><h3>{filter==="new"?"Không có món cần nhận":filter==="waiting"?"Không có món chờ phục vụ":"Chưa có món đã phục vụ"}</h3><p>Chọn trạng thái khác để xem các bàn.</p></div>}
+ </section>;
 }

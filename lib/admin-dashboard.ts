@@ -1,3 +1,5 @@
+import {getTableZones} from "./table-zones-server";
+import type {DiningTable} from "./menu";
 import {database,getMenu,getShop,publicOrder} from "./server";
 import {ensureLegacySessions} from "./table-sessions";
 import {getDisplaySettings} from "./display-settings-server";
@@ -17,13 +19,16 @@ export async function getBoardRevision(access:StaffAccess,storeId:string):Promis
   db.prepare("SELECT COALESCE(MAX(updated_at), 0) AS max_s, COUNT(*) AS cnt_s FROM table_sessions WHERE status IN ('pending','active')"),
   db.prepare("SELECT COALESCE(MAX(updated_at), 0) AS max_o, COUNT(*) AS cnt_o FROM orders WHERE status IN ('new','preparing','ready') OR (paid = 0 AND status != 'cancelled')"),
   db.prepare("SELECT COALESCE(MAX(created_at), 0) AS max_r, COUNT(*) AS cnt_r FROM service_requests WHERE status = 'open'"),
-  db.prepare("SELECT COUNT(*) AS cnt_t FROM dining_tables")
+  db.prepare("SELECT COUNT(*) AS cnt_t FROM dining_tables"),
+  db.prepare("SELECT value FROM settings WHERE key = 'table-zones'")
  ]);
  const s=result[0].results[0] as {max_s:number;cnt_s:number};
  const o=result[1].results[0] as {max_o:number;cnt_o:number};
  const r=result[2].results[0] as {max_r:number;cnt_r:number};
  const t=result[3].results[0] as {cnt_t:number};
- const raw=`${storeId}|${accountVer}|${perms}|${s.max_s}|${s.cnt_s}|${o.max_o}|${o.cnt_o}|${r.max_r}|${r.cnt_r}|${t.cnt_t}`;
+ const zoneValue=(result[4].results[0] as {value?:string}|undefined)?.value||"";
+ let zoneRevision="initial";try{zoneRevision=JSON.parse(zoneValue).version||"initial";}catch{}
+ const raw=`${storeId}|${accountVer}|${perms}|${s.max_s}|${s.cnt_s}|${o.max_o}|${o.cnt_o}|${r.max_r}|${r.cnt_r}|${t.cnt_t}|${encodeURIComponent(zoneRevision)}`;
  return `"${raw}"`;
 }
 
@@ -44,5 +49,6 @@ export async function adminDashboard(access:StaffAccess,includeMenu=true){
    db.prepare(operational?"SELECT id,request_id,session_id,from_table_id,from_table_name,to_table_id,to_table_name,transferred_at FROM table_transfers WHERE session_id IN (SELECT id FROM table_sessions WHERE status IN ('pending','active')) ORDER BY transferred_at ASC,id ASC":"SELECT * FROM table_transfers WHERE 0")
   ])
  ]);
- return {access,items,shop,displaySettings,themeSettings,tables:board[0].results,orders:(board[1].results as Record<string,unknown>[]).map(publicOrder),calls:board[2].results,stats:board[3].results[0],sessions:board[4].results,transfers:(board[5].results as Record<string,unknown>[]).map(publicTransfer)};
+ const zoneSettings=await getTableZones(board[0].results as DiningTable[]);
+ return {access,items,shop,displaySettings,themeSettings,zoneSettings,tables:board[0].results,orders:(board[1].results as Record<string,unknown>[]).map(publicOrder),calls:board[2].results,stats:board[3].results[0],sessions:board[4].results,transfers:(board[5].results as Record<string,unknown>[]).map(publicTransfer)};
 }
