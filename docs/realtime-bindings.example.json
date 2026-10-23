@@ -1,0 +1,4 @@
+{
+ "durable_objects":{"bindings":[{"name":"REALTIME_ROOM","class_name":"RealtimeRoom"}]},
+ "migrations":[{"tag":"realtime-v1","new_sqlite_classes":["RealtimeRoom"]}]
+}

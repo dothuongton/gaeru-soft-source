@@ -281,6 +281,8 @@ test("OpenTableBoard table detail sheet renders both tabs, portion counts, and g
     onOrderStatus: async () => true,
     onCollect: () => {},
     onCollectTable: () => {},
+    onLineStatus: async()=>true,
+    onCancelLine:async()=>true,
     onCancel: () => {},
     onViewOrder: () => {},
     onResolveCall: async () => true,
@@ -302,17 +304,18 @@ test("OpenTableBoard table detail sheet renders both tabs, portion counts, and g
   assert.ok(plain.includes("Theo lượt gọi"), "Contains Theo lượt gọi tab");
 
   // Verifies quick CTA when preparing items exist
-  assert.ok(plain.includes("Cập nhật món"), "Keeps preparation actions behind a compact disclosure");
+  assert.ok(plain.includes("Đã phục vụ"), "Shows preparation actions beside the dish");
+  assert.ok(!plain.includes("Cập nhật món"));
 
   // Verifies footer settlement details
   assert.ok(plain.includes("Cần thu") && plain.includes("35.000 ₫"), "Highlights remaining unpaid balance");
-  assert.ok(plain.includes("Thanh toán cả bàn"), "Provides settle entire table CTA");
-  assert.equal((html.match(/class="primary otb-bill-pay"/g)||[]).length,1);
+  assert.ok(!plain.includes("Thanh toán cả bàn"), "Hides collection until every portion is served");
+  assert.equal((html.match(/class="primary otb-bill-pay"/g)||[]).length,0);
   assert.doesNotMatch(plain,/Thanh toán lần này/);
   assert.ok(plain.includes("Đổi bàn"), "Provides transfer table CTA");
   assert.ok(plain.includes("Đóng bàn"), "Provides close table CTA");
   assert.ok(plain.includes("Chỉ đóng bàn khi phục vụ xong và đã thu đủ tiền"), "Guards table closure");
-  assert.ok(plain.includes("1 suất chưa phục vụ xong"));
+  assert.ok(plain.includes("Còn 1 suất chưa phục vụ"));
   assert.ok(plain.includes("Ghi chú lượt 2: Cho ít muối"));
   assert.ok(plain.includes("Đơn giá 35.000 ₫"));
 });

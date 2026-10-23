@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from "react";
 import {ArrowRight,CheckCircle2,ChefHat,LayoutDashboard,LoaderCircle,LogIn,Plus,QrCode,RefreshCw,ShieldCheck,Store,UsersRound,UserRound,LogOut} from "lucide-react";
 import {api} from "@/lib/api-client";
+import {installedStoreDestination} from "@/lib/staff-startup-branding";
 import {storeAdminPath,withStore} from "@/lib/store-links";
 import type {StoreInfo} from "@/lib/store-platform";
 import {StoreManagement} from "./store-management";
@@ -11,7 +12,7 @@ type PortalData={stores:StoreInfo[];isPlatformOwner:boolean;authenticated:boolea
 export function PlatformPortal(){
  const [data,setData]=useState<PortalData|null>(null),[error,setError]=useState(""),[register,setRegister]=useState(false),[busy,setBusy]=useState(false),[requestId,setRequestId]=useState(""),[created,setCreated]=useState<StoreInfo|null>(null);
  const lock=useRef(false),resultRef=useRef<HTMLElement>(null),registrationRef=useRef<HTMLElement>(null);
- async function load(){try{setData(await api<PortalData>("stores"));setError("");}catch(e){setError((e as Error).message);}}
+ async function load(){try{const result=await api<PortalData>("stores");const destination=installedStoreDestination(result,window.matchMedia("(display-mode: standalone)").matches||(navigator as Navigator&{standalone?:boolean}).standalone===true);if(destination&&!new URLSearchParams(window.location.search).has("section")){window.location.replace(storeAdminPath(destination));return;}setData(result);setError("");}catch(e){setError((e as Error).message);}}
  useEffect(()=>{void load();if(new URLSearchParams(window.location.search).get("section")==="register")setRegister(true);},[]);
  useEffect(()=>{if(register&&!requestId)setRequestId(crypto.randomUUID());},[register,requestId]);
  useEffect(()=>{if(register)registrationRef.current?.scrollIntoView({behavior:"smooth",block:"start"});},[register]);

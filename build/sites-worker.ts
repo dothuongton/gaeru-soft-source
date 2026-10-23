@@ -98,6 +98,8 @@ export default {
       runWithWorkerContext(ctx, () => handler.fetch(effectiveRequest, env, ctx))
     );
 
+    // Preserve the upgraded WebSocket; reconstructing a 101 drops its socket.
+    if(response.status===101)return response;
     const headers = new Headers(response.headers);
     if (!headers.has("X-Content-Type-Options")) {
       headers.set("X-Content-Type-Options", "nosniff");
@@ -128,3 +130,5 @@ export default {
     });
   },
 };
+
+export {RealtimeRoom} from "../lib/realtime-do";

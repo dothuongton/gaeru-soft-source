@@ -9,6 +9,7 @@ export type TablePaymentQuote = {
   paidTotal: number;
   unpaidTotal: number;
   unpaidCount: number;
+  unservedCount: number;
   orders: Order[];
 };
 export type TablePaymentRequest = {

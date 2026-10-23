@@ -1,5 +1,5 @@
 "use client";
-import {withStore} from "@/lib/store-links";
+import {activeStoreId,withStore} from "@/lib/store-links";
 
 import {useEffect, useId, useRef, useState} from "react";
 import {Banknote, Check, CheckCircle2, CircleAlert, Clock3, Landmark, LoaderCircle, LogOut, RefreshCw, WalletCards, X} from "lucide-react";
@@ -24,6 +24,7 @@ export function TablePaymentDialog({
   onClose: () => void;
   onPaid: (result: TablePaymentResult) => void;
 }) {
+  const [storeId]=useState(activeStoreId);
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const heading = useId();
@@ -66,7 +67,7 @@ export function TablePaymentDialog({
     setError("");
     void (async () => {
       try {
-        const response = await fetch(withStore("/api/admin/table-payment?session=" + encodeURIComponent(sessionId)), {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+        const response = await fetch(withStore("/api/admin/table-payment?session=" + encodeURIComponent(sessionId),storeId), {credentials: "same-origin", cache: "no-store", signal: controller.signal});
         const data = await response.json().catch(() => null) as (Partial<TablePaymentQuote> & {error?: string}) | null;
         if (!response.ok || !data) throw new Error(data?.error || "Chưa tải được số tiền của bàn. Vui lòng thử lại.");
         if (!cancelled) setQuote(data as TablePaymentQuote);
@@ -78,7 +79,7 @@ export function TablePaymentDialog({
       }
     })();
     return () => {cancelled = true; clearTimeout(timeout); controller.abort();};
-  }, [sessionId, revision]);
+  }, [sessionId, revision,storeId]);
 
   function refreshQuote() {
     if (paymentLock.current || uncertain) return;
@@ -88,7 +89,7 @@ export function TablePaymentDialog({
   }
 
   async function confirmPayment() {
-    if (paymentLock.current || loading || !quote || !quote.unpaidCount || (!paymentMethod && !attempt.current)) return;
+    if (paymentLock.current || loading || !quote || !quote.unpaidCount || quote.unservedCount>0 || (!paymentMethod && !attempt.current)) return;
     const body: TablePaymentRequest = attempt.current ?? {sessionId, requestId: crypto.randomUUID(), orderIds: quote.orders.map(order => order.id), expectedTotal: quote.unpaidTotal, paymentMethod: paymentMethod as TablePaymentMethod};
     attempt.current = body;
     paymentLock.current = true;
@@ -98,7 +99,7 @@ export function TablePaymentDialog({
     paymentController.current = controller;
     const timeout = setTimeout(() => controller.abort(), 15_000);
     try {
-      const response = await fetch(withStore("/api/admin/table-payment"), {method: "PATCH", credentials: "same-origin", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), signal: controller.signal});
+      const response = await fetch(withStore("/api/admin/table-payment",storeId), {method: "PATCH", credentials: "same-origin", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), signal: controller.signal});
       const data = await response.json().catch(() => null) as (Partial<TablePaymentResult> & {error?: string}) | null;
       if (!alive.current) return;
       if (response.ok && data?.ok && data.receipt?.requestId === body.requestId && data.receipt.sessionId === body.sessionId && data.receipt.amount === body.expectedTotal) {
@@ -185,13 +186,13 @@ export function TablePaymentDialog({
           {error && <div className="tp-error" role="alert"><CircleAlert size={24}/><p>{error}</p></div>}
           {loading ? <div className="tp-loading" role="status"><LoaderCircle className="spin" size={32}/>Đang kiểm tra các lần gọi món…</div> : !quote ? <button type="button" className="tp-secondary" onClick={refreshQuote}><RefreshCw size={22}/>Tải lại số tiền</button> : <>
             <div className="tp-totals"><div><span>Tổng lượt này</span><strong>{money(quote.total)}</strong></div><div><span>Đã thanh toán</span><strong>{money(quote.paidTotal)}</strong></div><div className="remaining"><span>Còn cần thu</span><strong>{money(quote.unpaidTotal)}</strong><small>{quote.unpaidCount} lần gọi món chưa thanh toán</small></div></div>
-            {!quote.unpaidCount ? <div className="tp-all-paid"><CheckCircle2 size={38}/><h3>Bàn không còn tiền cần thu</h3><p>Các lần gọi món đã được thanh toán. Có thể đóng bàn sau khi phục vụ xong.</p><button type="button" className="tp-primary" onClick={close}>Trở lại bàn</button></div> : <>
+            {quote.unservedCount>0 ? <div className="tp-notice" role="status"><Clock3 size={22}/><div><p>Bàn còn {quote.unservedCount} lượt gọi chưa phục vụ xong. Trở về hóa đơn để phục vụ hoặc hủy món đặt nhầm.</p><button type="button" className="tp-secondary" onClick={close}>Trở về hóa đơn</button></div></div> : !quote.unpaidCount ? <div className="tp-all-paid"><CheckCircle2 size={38}/><h3>Bàn không còn tiền cần thu</h3><p>Các lần gọi món đã được thanh toán. Có thể đóng bàn sau khi phục vụ xong.</p><button type="button" className="tp-primary" onClick={close}>Trở lại bàn</button></div> : <>
               <div className="tp-list-heading"><h3>Các lần gọi món sẽ thanh toán</h3><button type="button" disabled={paying || uncertain} onClick={refreshQuote}><RefreshCw size={19}/>Cập nhật</button></div>
               <div className="tp-orders">{quote.orders.map(order => <article key={order.id}><div><strong>#{order.code}</strong><time dateTime={new Date(order.created_at).toISOString()}>{moment(order.created_at)}</time><p>{order.items.map(item => `${item.quantity}× ${item.name}`).join(" · ")}</p></div><strong>{money(order.total)}</strong></article>)}</div>
               <p className="tp-hint">Chỉ thu các lần gọi món chưa thanh toán trong lượt khách hiện tại. Các khoản đã thu được giữ nguyên.</p>
               <fieldset className="tp-methods" disabled={paying || uncertain}><legend>Khách thanh toán bằng</legend>{([{id:"cash",label:"Tiền mặt",icon:Banknote},{id:"bank",label:"Chuyển khoản",icon:Landmark},{id:"other",label:"Khác",icon:WalletCards}] as const).map(method => <label key={method.id} className={paymentMethod === method.id ? "selected" : ""}><input type="radio" name="table-payment-method" value={method.id} checked={paymentMethod === method.id} onChange={() => setPaymentMethod(method.id)}/><method.icon size={30}/><span>{method.label}</span></label>)}</fieldset>
               <p className="tp-hint tp-time"><Clock3 size={19}/>Thời điểm thu tiền được ghi khi quán xác nhận đã nhận đủ.</p>
-              <div className="tp-footer"><button type="button" className="tp-secondary" disabled={paying} onClick={close}>Quay lại</button><button type="button" className="tp-primary" disabled={paying || (!paymentMethod && !uncertain)} onClick={() => void confirmPayment()}>{paying ? <LoaderCircle className="spin" size={24}/> : <Check size={24}/>}<span>{uncertain ? "Kiểm tra lại giao dịch" : "Xác nhận đã thu " + money(quote.unpaidTotal)}</span></button></div>
+              <div className="tp-footer"><button type="button" className="tp-secondary" disabled={paying} onClick={close}>Quay lại</button><button type="button" className="tp-primary" disabled={paying || quote.unservedCount>0 || (!paymentMethod && !uncertain)} onClick={() => void confirmPayment()}>{paying ? <LoaderCircle className="spin" size={24}/> : <Check size={24}/>}<span>{uncertain ? "Kiểm tra lại giao dịch" : "Xác nhận đã thu " + money(quote.unpaidTotal)}</span></button></div>
             </>}
           </>}
         </>

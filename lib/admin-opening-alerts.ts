@@ -95,9 +95,9 @@ export function adminAlertSpeech(alert: AdminAlert): string {
     : tableAlertSpeech(alert);
 }
 
-export type SupportAlert = {kind:"support"; id:string; tableId:string; sessionId:string|null; tableName:string; customerName:string; requestKind:"service"|"bill"; note:string};
+export type SupportAlert = {kind:"support"; id:string; tableId:string; sessionId:string|null; tableName:string; customerName:string; requestKind:"service"|"bill"; requestCount?:number; pendingCount?:number; note:string};
 export function isSupportAlert(alert:AdminAlert):alert is SupportAlert {return "kind" in alert && alert.kind === "support";}
 function supportKey(call:ServiceRequest) {return "support:"+call.id+":"+call.created_at;}
-function supportAlert(call:ServiceRequest):SupportAlert {return {kind:"support",id:supportKey(call),tableId:call.table_id,sessionId:call.session_id??null,tableName:call.table_name,customerName:"",requestKind:call.kind,note:call.note??""};}
+function supportAlert(call:ServiceRequest):SupportAlert {return {kind:"support",id:supportKey(call),tableId:call.table_id,sessionId:call.session_id??null,tableName:call.table_name,customerName:"",requestKind:call.kind,requestCount:call.request_count??1,pendingCount:call.pending_count??1,note:call.note??""};}
 export function collectSupportAlerts(calls:ServiceRequest[], previous:ReadonlySet<string>|null) {const seenIds=new Set(previous??[]);const alerts:SupportAlert[]=[];for(const call of calls){const key=supportKey(call);if(previous!==null&&!seenIds.has(key)&&call.status==="open")alerts.push(supportAlert(call));seenIds.add(key);}return {seenIds,alerts};}
 export function supportSpeech(alert:SupportAlert) {const raw=alert.tableName.trim();const match=/^(?:bàn\s*(?:số\s*)?)?0*(\d+)$/i.exec(raw);const name=match?"Bàn số "+Number(match[1]):raw||"Bàn";const note=alert.note.replace(/\s+/g," ").trim().slice(0,300);return name+(alert.requestKind==="bill"?" yêu cầu thanh toán.":" cần hỗ trợ nhân viên.")+(note?" Nội dung yêu cầu: "+note:"");}

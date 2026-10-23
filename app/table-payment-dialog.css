@@ -2,3 +2,48 @@
 @media(max-width:640px){.modal.wide.table-payment-dialog{width:calc(100vw - 16px);max-height:95dvh;border-radius:14px}.tp-header{padding:24px 19px 20px;gap:10px}.tp-header h2{font-size:calc(40px * var(--moc-font-scale,1))}.tp-header p{font-size:calc(22px * var(--moc-font-scale,1))}.tp-header>div>span{font-size:calc(16px * var(--moc-font-scale,1))}.tp-body{padding:22px 18px 25px}.tp-totals{gap:13px}.tp-totals>div{padding:17px 14px}.tp-totals>div>span{font-size:calc(18px * var(--moc-font-scale,1))}.tp-totals>div>strong{font-size:calc(28px * var(--moc-font-scale,1))}.tp-totals>.remaining>strong{font-size:calc(40px * var(--moc-font-scale,1))}.tp-totals small{font-size:calc(18px * var(--moc-font-scale,1))}.tp-list-heading{flex-wrap:wrap;gap:5px}.tp-list-heading h3{font-size:calc(22px * var(--moc-font-scale,1))}.tp-list-heading>button{font-size:calc(18px * var(--moc-font-scale,1))}.tp-orders>article{flex-direction:column;padding:19px 16px;gap:10px}.tp-orders>article>strong{align-self:flex-end;font-size:calc(24px * var(--moc-font-scale,1))}.tp-orders>article strong{font-size:calc(22px * var(--moc-font-scale,1))}.tp-orders p{font-size:calc(20px * var(--moc-font-scale,1))}.tp-methods{grid-template-columns:1fr;gap:10px}.tp-methods>label{flex-direction:row;justify-content:flex-start;text-align:left;min-height:69px;padding:19px 40px 19px 18px;font-size:calc(22px * var(--moc-font-scale,1));gap:16px}.tp-methods input{top:50%;transform:translateY(-50%);right:16px}.tp-methods legend{font-size:calc(24px * var(--moc-font-scale,1))}.tp-footer{flex-direction:column-reverse;gap:11px}.tp-primary,.tp-secondary{font-size:calc(22px * var(--moc-font-scale,1));min-height:60px;padding:17px}.tp-notice,.tp-error{font-size:calc(18px * var(--moc-font-scale,1));padding:17px 15px;gap:9px}.tp-loading{font-size:calc(22px * var(--moc-font-scale,1));flex-direction:column;text-align:center;padding:45px 15px}.tp-all-paid h3{font-size:calc(26px * var(--moc-font-scale,1))}.tp-all-paid p{font-size:calc(20px * var(--moc-font-scale,1))}.otb-table-pay{font-size:calc(22px * var(--moc-font-scale,1));padding:17px 13px}}
 .tp-success-view{text-align:center;padding:24px 12px 10px}.tp-success-icon{color:var(--green,#2e7d32);margin:0 auto 12px}.tp-success-amount{font-size:calc(36px * var(--moc-font-scale,1));font-weight:700;color:var(--ink);margin:8px 0}.tp-success-meta{font-size:calc(18px * var(--moc-font-scale,1));color:var(--muted);margin-bottom:20px}.tp-unserved-warning{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:8px;background:#fff3de;border:1px solid #e8d2a8;color:#906d36;font-size:calc(18px * var(--moc-font-scale,1));margin-bottom:20px}.tp-ready-to-close{margin:20px 0;padding:16px;background:var(--moc-surface-tint,#edf2e7);border-radius:10px;text-align:center}.tp-ready-to-close p{margin-bottom:14px;font-size:calc(18px * var(--moc-font-scale,1));color:var(--ink)}.tp-ready-to-close .tp-primary{width:100%;margin-bottom:10px}
 @media(max-width:350px){.tp-totals{grid-template-columns:1fr}.tp-totals>.remaining{grid-column:auto}.tp-header{padding-left:16px;padding-right:16px}.tp-body{padding-left:14px;padding-right:14px}}
+/* Override the shared mobile full-screen modal rule for cashier confirmation. */
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog[open]{display:flex;flex-direction:column;inset:calc(12px + env(safe-area-inset-top)) 10px auto;width:min(600px,calc(100vw - 20px));height:auto;max-height:calc(var(--aw-viewport-height,100dvh) - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));margin:0 auto;overflow:hidden;border-radius:16px;border:1px solid var(--aw-line,var(--line))}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-header{padding:12px 16px;flex-shrink:0;gap:10px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-header h2{font:600 20px/1.3 system-ui;margin:4px 0}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-header>div>span{font-size:11px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-body{padding:14px 16px;overflow:auto;min-height:0;overscroll-behavior:contain}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-totals{gap:8px;margin-bottom:12px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-totals>div{padding:10px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-totals strong{font-size:20px;margin-top:4px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-totals>.remaining{background:var(--aw-soft,#edf2e7)}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-totals>.remaining strong{color:var(--aw-ink,var(--ink))}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-orders{max-height:150px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-orders article{padding:10px;gap:5px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-orders article strong{font-size:14px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-methods{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:14px 0}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-methods label{flex-direction:column;justify-content:center;padding:24px 5px 8px;gap:6px;min-height:90px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-methods svg{width:20px;height:20px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-methods input{top:8px;right:8px;transform:none;width:16px;height:16px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-primary,.app-shell[data-view="admin"] .table-payment-dialog .tp-secondary{min-height:44px;font-size:14px;padding:10px 12px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-footer{margin-top:12px;gap:8px}
+.app-shell[data-view="admin"] .table-payment-dialog .tp-notice,.app-shell[data-view="admin"] .table-payment-dialog .tp-error{padding:10px;margin-bottom:12px;font-size:14px}
+/* Match the compact bill typography even after shared responsive styles load. */
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:12px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-totals>div{padding:9px 6px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-totals>.remaining{grid-column:auto;background:var(--aw-soft,#edf2e7);border-color:var(--aw-line)}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-totals :is(span,small){color:var(--aw-muted,#657368);font-size:11px;line-height:1.4;margin:0}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-totals strong{font-size:16px;color:var(--aw-ink,#27382e);line-height:1.4;margin-top:4px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-totals small{display:none}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-list-heading{gap:6px;margin:0 0 8px;flex-wrap:nowrap}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-list-heading h3{font:600 14px/1.4 system-ui;margin:0}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-list-heading button{font-size:12px;min-height:44px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-orders{max-height:140px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-orders article{flex-direction:row;align-items:start;padding:8px;gap:6px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-orders :is(p,time,strong){font-size:12px;line-height:1.4;margin:0}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-hint{font-size:11px;margin:8px 0}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-time{display:none}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-methods{margin:10px 0}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-methods legend{font:600 13px/1.4 system-ui;margin-bottom:6px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-methods label{font-size:12px;min-height:76px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-methods label span{font-size:12px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-footer{flex-direction:row;gap:7px;margin-top:10px}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-footer :is(button,span){font-size:13px;line-height:1.4}
+@media(max-width:350px){.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-totals strong{font-size:14px}.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-footer{flex-direction:column-reverse}}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-primary{background:var(--aw-accent,#244f3c);color:var(--moc-on-accent,#fff);border-color:transparent}
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.table-payment-dialog .tp-primary span{color:inherit}

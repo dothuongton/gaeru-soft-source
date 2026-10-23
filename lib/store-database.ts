@@ -2,7 +2,7 @@ import {AsyncLocalStorage} from "node:async_hooks";
 import {env} from "cloudflare:workers";
 import {OrderError} from "./menu";
 
-export const STORE_TABLES=["settings","dining_tables","menu_items","table_sessions","table_settlements","table_payment_receipts","table_transfers","orders","service_requests","staff_accounts","staff_account_audit","staff_push_subscriptions"] as const;
+export const STORE_TABLES=["settings","dining_tables","menu_items","table_sessions","table_settlements","table_payment_receipts","table_transfers","orders","service_requests","staff_accounts","staff_account_audit","staff_push_subscriptions","service_request_events","order_audit"] as const;
 const context=new AsyncLocalStorage<string>();
 export function currentStoreId(){const id=context.getStore();if(!id)throw new Error("Store context is required");return id;}
 export function inStore<T>(id:string,operation:()=>T):T{if(!/^[a-z0-9][a-z0-9-]{0,47}$/.test(id))throw new OrderError("Mã cửa hàng không hợp lệ.",400);return context.run(id,operation);}

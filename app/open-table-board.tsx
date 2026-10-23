@@ -1,9 +1,11 @@
 "use client";
 
+import {BillHistory} from "./bill-history";
+import {BillItemActions,type BillLineCancel} from "./bill-item-actions";
 import type { ReactNode } from "react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowRight, ArrowRightLeft, Banknote, BellRing, Grid2X2, List, QrCode, Check, CheckCheck, ChefHat, ChevronDown, Clock3, Eye, History, LoaderCircle, LogOut, ReceiptText, ShieldCheck, Smartphone, Table2, UserRound, UtensilsCrossed, X } from "lucide-react";
-import { money, statuses, normalizeOrderItem, canCancelOrder, type DiningTable, type Order, type OrderStatus, type ServiceRequest } from "@/lib/menu";
+import { money, statuses, normalizeOrderItem, canCancelOrder, isOrderFullyServed, type DiningTable, type Order, type OrderStatus, type ServiceRequest } from "@/lib/menu";
 import type { TableTransfer } from "@/lib/table-transfer-types";
 import type { Permission } from "@/lib/staff-permissions";
 import type { AdminTableSession, TableSessionAction } from "./table-session-admin";
@@ -44,9 +46,11 @@ export type OpenTableBoardProps = {
   isBusy?: (id: string) => boolean;
   focusTableId: string | null;
   focusRevision: number;
+  onFocusHandled?: (tableId: string, revision: number) => void;
   onSessionAction: (id: string, action: TableSessionAction) => Promise<boolean>;
   onOrderStatus: (order: Order, next: OrderStatus) => Promise<boolean>;
-  onLineStatus?: (orderId: string, orderLineId: string, toStatus: OrderStatus, count?: number,fromStatus?:"new"|"preparing"|"ready") => Promise<boolean>;
+  onLineStatus?: (orderId: string, orderLineId: string, toStatus: OrderStatus, count?: number,fromStatus?:"new"|"preparing"|"ready"|"waiting",expectedUpdatedAt?:number) => Promise<boolean>;
+  onCancelLine?:BillLineCancel;
   onCollect: (order: Order) => void;
   onCollectTable: (sessionId: string) => void;
   onCancel: (order: Order) => void;
@@ -182,7 +186,7 @@ export type GroupedItem = {
 
 export function groupOrderItems(orders: Order[]): GroupedItem[] {
   const validOrders = orders
-    .sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
+    .slice().sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
 
   const groups = new Map<string, GroupedItem>();
 
@@ -191,6 +195,7 @@ export function groupOrderItems(orders: Order[]): GroupedItem[] {
     const roundNumber = orderIdx + 1;
     order.items.forEach((item, itemIdx) => {
       const norm = normalizeOrderItem(item, order.status, itemIdx);
+      if(norm.quantity===0)return;
       const sortedExtras = [...norm.extras].sort();
       const groupKey = JSON.stringify([norm.itemId,norm.name,norm.unitPrice,sortedExtras,norm.taste,norm.note]);
 
@@ -239,17 +244,15 @@ export function groupOrderItems(orders: Order[]): GroupedItem[] {
   return Array.from(groups.values());
 }
 
-export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy,onOrderStatus,onLineStatus,onCollectTable,onTransfer,onCancel,onResolveCall,onRequestClose}:{
+export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy,onOrderStatus,onLineStatus,onCancelLine,onCollectTable,onTransfer,onCancel,onResolveCall,onRequestClose}:{
   row:OpenTable;busy:boolean;showZones?:boolean;permissions:Permission[];isItemBusy:(key:string)=>boolean;
   onOrderStatus:(order:Order,next:OrderStatus)=>Promise<boolean>;
-  onLineStatus?:(orderId:string,orderLineId:string,toStatus:OrderStatus,count?:number,fromStatus?:"new"|"preparing"|"ready")=>Promise<boolean>;
+  onLineStatus?:(orderId:string,orderLineId:string,toStatus:OrderStatus,count?:number,fromStatus?:"new"|"preparing"|"ready"|"waiting",expectedUpdatedAt?:number)=>Promise<boolean>;
+  onCancelLine?:BillLineCancel;
   onCollectTable:(sessionId:string)=>void;onTransfer:(session:AdminTableSession)=>void;
   onCancel:(order:Order)=>void;onResolveCall:(call:ServiceRequest)=>Promise<boolean>;onRequestClose:(sessionId:string)=>void;
 }) {
   const [tab,setTab]=useState<"items"|"rounds">("items");
-  const [actionError,setActionError]=useState("");
-  const actionLock=useRef(false);
-  const [updating,setUpdating]=useState(false);
   const canManage=permissions.includes("orders.manage"),canCollect=permissions.includes("payments.collect");
   const canTransfer=permissions.includes("tables.transfer"),canClose=permissions.includes("tables.manage");
   const canCancel=permissions.includes("orders.cancel");
@@ -257,30 +260,13 @@ export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy
   const rounds=useMemo(()=>[...row.orders].sort((a,b)=>a.created_at-b.created_at||a.id.localeCompare(b.id)),[row.orders]);
   const portions=items.reduce((sum,item)=>sum+item.totalQuantity,0);
   const pending=items.reduce((sum,item)=>sum+item.newCount+item.preparingCount+item.readyCount,0);
-  const locked=busy||updating;
+  const locked=busy;
   const tabId=useId();
-
-  async function advance(group:GroupedItem,to:OrderStatus){
-    if(!canManage||actionLock.current||busy)return;
-    actionLock.current=true;setUpdating(true);setActionError("");
-    try {
-      for(const round of group.rounds){
-        // Only advance the requested stage; a served/preparing sibling must not
-        // accidentally pull a newly received portion forward.
-        const count=to==="preparing"?round.newCount:to==="ready"?round.preparingCount:round.readyCount;
-        if(!count)continue;
-        const order=row.orders.find(order=>order.id===round.orderId);
-        const ok=onLineStatus?await onLineStatus(round.orderId,round.orderLineId,to,count,to==="preparing"?"new":to==="ready"?"preparing":"ready"):order&&statuses[order.status]?.next===to?await onOrderStatus(order,to):false;
-        if(!ok){setActionError("Chưa cập nhật được món. Đã giữ nguyên các món còn lại; hãy kiểm tra rồi thử lại.");break;}
-      }
-    } catch {setActionError("Kết nối bị gián đoạn. Kiểm tra trạng thái món trước khi thử lại.");}
-    finally{actionLock.current=false;setUpdating(false);}
-  }
 
   const stages=(item:{newCount:number;preparingCount:number;readyCount:number;servedCount:number})=><span className="otb-bill-stages">
     {item.newCount>0&&<span className="stage-badge new">{item.newCount} chờ nhận</span>}
-    {item.preparingCount>0&&<span className="stage-badge preparing">{item.preparingCount} đang làm</span>}
-    {item.readyCount>0&&<span className="stage-badge ready">{item.readyCount} sẵn sàng</span>}
+    {item.preparingCount>0&&<span className="stage-badge preparing">{item.preparingCount} chưa phục vụ</span>}
+    {item.readyCount>0&&<span className="stage-badge ready">{item.readyCount} chờ phục vụ</span>}
     {item.servedCount>0&&<span className="stage-badge served">{item.servedCount} đã phục vụ</span>}
   </span>;
 
@@ -290,11 +276,11 @@ export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy
         <span><UserRound size={14}/>{row.session.customer_name||"Khách tại bàn"}{showZones&&row.table?.zone?" · "+row.table.zone:""}</span>
         <span><Clock3 size={13}/>{orderTime(row.session.created_at)} · {portions} suất · {row.orders.length} lượt gọi</span>
       </div>
-      {row.calls.length>0&&<details className="otb-bill-support"><summary><BellRing size={15}/>{row.calls.length} yêu cầu chưa xử lý<ChevronDown size={14}/></summary>{row.calls.map(call=><div key={call.id}><span>{call.kind==="bill"?"Tính tiền":"Gọi nhân viên"} · {orderTime(call.created_at)}{call.note&&<small>{call.note}</small>}</span>{canClose&&<button type="button" disabled={locked||isItemBusy("call:"+call.id)} onClick={()=>void onResolveCall(call)}>Đã hỗ trợ</button>}</div>)}</details>}
+      {row.calls.length>0&&<details className="otb-bill-support"><summary><BellRing size={15}/>{row.calls.length} yêu cầu chưa xử lý<ChevronDown size={14}/></summary>{row.calls.map(call=><div key={call.id}><span>{call.kind==="bill"?"Nhắc thanh toán":"Gọi nhân viên"} · lần {call.request_count??1} · {call.pending_count??1} chưa xử lý · {orderTime(call.created_at)}{call.note&&<small>{call.note}</small>}</span>{canClose&&<button type="button" disabled={locked||isItemBusy("call:"+call.id)} onClick={()=>void onResolveCall(call)}>Đã hỗ trợ</button>}</div>)}</details>}
       <div className="otb-detail-tabs" role="tablist" aria-label="Cách xem hóa đơn">
         {([{id:"items",label:"Theo món",count:items.length},{id:"rounds",label:"Theo lượt gọi",count:rounds.length}] as const).map(value=><button type="button" role="tab" id={tabId+value.id} key={value.id} aria-selected={tab===value.id} aria-controls={tabId+"-body"} className={tab===value.id?"selected":""} onClick={()=>setTab(value.id)}>{value.label}<span className="tab-pill">{value.count}</span></button>)}
       </div>
-      {actionError&&<p role="alert" className="otb-action-error">{actionError}</p>}
+
       <div className="otb-bill-columns" aria-hidden="true"><span>SL</span><span>Món / ghi chú</span><span>Thành tiền</span></div>
       <div className="otb-detail-body" role="tabpanel" id={tabId+"-body"} aria-labelledby={tabId+tab}>
         {tab==="items"?items.map(item=><article className="otb-bill-line" key={item.key}>
@@ -302,7 +288,9 @@ export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy
           {[...item.extras,item.taste,item.note].some(Boolean)&&<p className="otb-bill-note">{[...item.extras,item.taste,item.note].filter(Boolean).join(" · ")}</p>}
           <p className="otb-bill-rounds">{item.rounds.map(round=>"Lượt "+round.roundNumber+" · "+orderTime(round.createdAt)+" ("+round.quantity+"×)").join("; ")}</p>
           {item.rounds.map(round=>{const note=row.orders.find(order=>order.id===round.orderId)?.note;return note?<p className="otb-bill-note" key={round.orderId+round.orderLineId}>Ghi chú lượt {round.roundNumber}: {note}</p>:null;})}
+          {item.rounds.map(round=>{const source=row.orders.find(order=>order.id===round.orderId);const line=source?.items.find((line,index)=>normalizeOrderItem(line,source.status,index).orderLineId===round.orderLineId);return line?.cancellations?.length?<p key={round.orderId+round.orderLineId} className="otb-bill-note bill-cancelled-note">Lượt {round.roundNumber}: đã hủy {line.cancellations.reduce((sum,value)=>sum+value.quantity,0)} suất · {line.cancellations.map(value=>value.reason).join("; ")}</p>:null;})}
           {stages(item)}
+          <BillItemActions entries={item.rounds.map(round=>({order:row.orders.find(order=>order.id===round.orderId)!,lineId:round.orderLineId,round:round.roundNumber}))} canManage={canManage} canCancel={canCancel} locked={locked} onLineStatus={onLineStatus} onCancelLine={onCancelLine}/>
 
         </article>):rounds.map((order,index)=><section key={order.id} className={"otb-bill-round "+(order.status==="cancelled"?"is-cancelled":"")}>
           <header><strong>Lượt {index+1} · {orderTime(order.created_at)}</strong><span>{statuses[order.status].short}</span></header>
@@ -312,6 +300,8 @@ export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy
             <div className="otb-bill-line-heading"><b className="otb-bill-qty">{line.quantity}×</b><div><strong>{line.name}</strong><small>Đơn giá {money(line.unitPrice)}</small></div><strong className="otb-bill-price">{money(line.total)}</strong></div>
             {[...line.extras,line.taste,line.note].some(Boolean)&&<p className="otb-bill-note">{[...line.extras,line.taste,line.note].filter(Boolean).join(" · ")}</p>}
             {order.status!=="cancelled"&&stages(line)}
+            {line.cancellations?.length&&<p className="otb-bill-note bill-cancelled-note">Đã hủy {line.cancellations.reduce((sum,value)=>sum+value.quantity,0)} suất · {line.cancellations.map(value=>value.reason).join("; ")}</p>}
+            <BillItemActions entries={[{order,lineId:line.orderLineId,round:rounds.findIndex(value=>value.id===order.id)+1}]} canManage={canManage} canCancel={canCancel} locked={locked} onLineStatus={onLineStatus} onCancelLine={onCancelLine}/>
           </article>;})}
           {order.cancel_reason&&order.status==="cancelled"&&<p className="otb-bill-note">Lý do hủy: {order.cancel_reason}</p>}
           <p className="otb-bill-round-total"><span>{order.status==="cancelled"?"Đã hủy":"Tổng lượt"}</span><strong>{money(order.total)}</strong></p>
@@ -322,12 +312,9 @@ export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy
         </section>)}
         {!items.length&&tab==="items"&&<p className="otb-empty-history">Chưa có món tính tiền trong phiên này.{row.orders.length>0?" Xem lượt gọi để kiểm tra các đơn đã hủy.":""}</p>}
       </div>
-      {canManage&&items.some(item=>item.servedCount<item.totalQuantity)&&<details className="otb-bill-secondary"><summary>Cập nhật món<ChevronDown size={15}/></summary><div className="otb-bill-progress-actions">{items.filter(item=>item.servedCount<item.totalQuantity).map(item=><section key={item.key}><strong>{item.name}</strong><div>
-        {item.newCount>0&&<button type="button" disabled={locked} onClick={()=>void advance(item,"preparing")}>Nhận {item.newCount} suất</button>}
-        {item.preparingCount>0&&<button type="button" disabled={locked} onClick={()=>void advance(item,"ready")}>Sẵn sàng {item.preparingCount} suất</button>}
-        {item.readyCount>0&&<button type="button" disabled={locked} onClick={()=>void advance(item,"served")}>Phục vụ {item.readyCount} suất</button>}
-      </div></section>)}</div></details>}
+      {row.orders.some(order=>order.items.some(item=>item.cancellations?.length))&&tab==="items"&&<p className="otb-bill-rounds">Có món đã hủy, không tính vào bill. Xem lịch sử trong “Theo lượt gọi”.</p>}
       {row.orders.some(order=>order.status==="cancelled")&&tab==="items"&&<p className="otb-bill-rounds">{row.orders.filter(order=>order.status==="cancelled").length} lượt đã hủy, không tính vào bill. Xem trong “Theo lượt gọi”.</p>}
+      <BillHistory sessionId={row.session.id} revision={row.orders.map(order=>order.id+":"+order.updated_at).join("|")}/>
       {row.transfers.length>0&&<TransferHistory transfers={row.transfers}/>}
       {(canTransfer||canClose)&&<details className="otb-bill-secondary"><summary>Thao tác bàn<ChevronDown size={15}/></summary><div>
         {canTransfer&&<button type="button" disabled={locked||isItemBusy("transfer:"+row.session.id)} onClick={()=>onTransfer(row.session)}><ArrowRightLeft size={16}/>Đổi bàn</button>}
@@ -337,8 +324,8 @@ export function TableDetailSheet({row,busy,showZones=true,permissions,isItemBusy
     <footer className="otb-detail-footer otb-bill-footer">
       <p className="otb-bill-total-meta"><span>Tổng bill <strong>{money(row.total)}</strong></span><span>Đã thu <strong>{money(row.paid)}</strong></span></p>
       <div className="otb-bill-due"><span>{row.unpaid>0?"Cần thu":row.validOrders.length?"Đã thu đủ":"Chưa phát sinh"}</span><strong>{money(row.unpaid)}</strong></div>
-      {canCollect&&row.unpaid>0&&<button type="button" className="primary otb-bill-pay" disabled={locked||isItemBusy("pay:"+row.session.id)} onClick={()=>onCollectTable(row.session.id)}><Banknote size={18}/>Thanh toán cả bàn<strong>{money(row.unpaid)}</strong></button>}
-      {pending>0&&<p className="otb-bill-pending">{pending} suất chưa phục vụ xong</p>}
+      {canCollect&&row.unpaid>0&&pending===0&&<button type="button" className="primary otb-bill-pay" disabled={locked||isItemBusy("pay:"+row.session.id)} onClick={()=>onCollectTable(row.session.id)}><Banknote size={18}/>Thanh toán cả bàn<strong>{money(row.unpaid)}</strong></button>}
+      {pending>0&&<p className="otb-bill-pending">Còn {pending} suất chưa phục vụ. Phục vụ hoặc hủy món đặt nhầm để thanh toán.</p>}
     </footer>
   </div>;
 }
@@ -360,7 +347,7 @@ function TableVisitPopup({title,busy,onDismiss,children,receipt=false}:{title:st
   </dialog>;
 }
 
-export function OpenTableBoard({ showZones=true, initialView = "matrix", mode = "tables", permissions, tables, sessions, orders, calls, transfers, working, isBusy, focusTableId, focusRevision, onSessionAction, onOrderStatus, onLineStatus, onCollectTable, onCancel, onViewOrder, onResolveCall, onTransfer }: OpenTableBoardProps) {
+export function OpenTableBoard({ showZones=true, initialView = "matrix", mode = "tables", permissions, tables, sessions, orders, calls, transfers, working, isBusy, focusTableId, focusRevision, onFocusHandled, onSessionAction, onOrderStatus, onLineStatus, onCancelLine, onCollectTable, onCancel, onViewOrder, onResolveCall, onTransfer }: OpenTableBoardProps) {
   const [matrixLayout,setMatrixLayout]=useState<"grid"|"list">("grid");
   const [qrTable,setQrTable]=useState<DiningTable|null>(null);
   const [boardView,setBoardView]=useState<"matrix"|"manage">(initialView);
@@ -441,7 +428,8 @@ export function OpenTableBoard({ showZones=true, initialView = "matrix", mode = 
     handledFocus.current = request;
     setActionError("");
     setPopupSessionId(target.session.id);
-  }, [focusTableId, focusRevision, rows]);
+    onFocusHandled?.(focusTableId, focusRevision);
+  }, [focusTableId, focusRevision, rows, onFocusHandled]);
 
   async function act(key: string, permission: Permission, action: () => Promise<boolean>) {
     if (!permissions.includes(permission)) return false;
@@ -480,10 +468,10 @@ export function OpenTableBoard({ showZones=true, initialView = "matrix", mode = 
           <div className="otb-card-heading"><div><h3>{row.name}</h3>{showZones&&row.table?.zone && <span>{row.table.zone}</span>}</div>{hasNew ? <span className="otb-new-badge"><BellRing size={15} /><strong>{row.newOrders.length}</strong> đơn mới</span> : isPending ? <span className="otb-state-badge pending"><Clock3 size={13} />Chờ mở bàn</span> : row.ready ? <span className="otb-state-badge ready"><UtensilsCrossed size={13} />{row.ready} chờ phục vụ</span> : row.preparing ? <span className="otb-state-badge preparing"><ChefHat size={13} />{row.preparing} đang làm</span> : canClose && row.orders.length ? <span className="otb-state-badge settled"><CheckCheck size={13} />Đã xử lý xong</span> : <span className="otb-state-badge"><Table2 size={13} />Đang mở</span>}</div>
           <div className="otb-customer"><UserRound size={15} /><strong>{session.customer_name}</strong><time dateTime={new Date(session.created_at).toISOString()}><Clock3 size={12} />{tableTime(session.created_at)}</time></div>
           {isPending ? <div className="otb-pending-content"><p>{canManageTables ? "Khách đã quét QR và nhập tên. Đối chiếu khách tại bàn để mở quyền gọi món." : "Yêu cầu đang chờ người có quyền quản lý bàn duyệt."}</p>{canManageTables && <div><button type="button" className="primary" disabled={isItemBusy(session.id)} onClick={() => void act(session.id, "tables.manage", () => onSessionAction(session.id, "approve"))}>{busyId === session.id ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}Duyệt mở bàn</button><button type="button" className="secondary" disabled={isItemBusy(session.id)} onClick={() => void act(session.id, "tables.manage", () => onSessionAction(session.id, "reject"))}><X size={16} />Từ chối</button></div>}</div> : <>
-            {needsSupport && <section className="otb-support" aria-label={"Yêu cầu hỗ trợ của " + row.name}><div className="otb-support-title"><BellRing size={25} /><strong>Bàn cần hỗ trợ</strong><span>{row.calls.length}</span></div>{row.calls.map(call => <div className="otb-support-call" key={call.id}><div><strong>{call.kind === "bill" ? <ReceiptText size={21} /> : <BellRing size={21} />}{call.kind === "bill" ? "Yêu cầu thanh toán" : "Gọi nhân viên"}</strong><time dateTime={new Date(call.created_at).toISOString()}>{tableTime(call.created_at)}</time>{call.note&&<p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{call.note}</p>}</div>{canManageTables && <button type="button" disabled={isItemBusy("call:" + call.id)} onClick={() => void act("call:" + call.id, "tables.manage", () => onResolveCall(call))}>{busyId === "call:" + call.id ? <LoaderCircle size={21} className="spin" /> : <Check size={21} />}Đã hỗ trợ</button>}</div>)}</section>}
+            {needsSupport && <section className="otb-support" aria-label={"Yêu cầu hỗ trợ của " + row.name}><div className="otb-support-title"><BellRing size={25} /><strong>Bàn cần hỗ trợ</strong><span>{row.calls.length}</span></div>{row.calls.map(call => <div className="otb-support-call" key={call.id}><div><strong>{call.kind === "bill" ? <ReceiptText size={21} /> : <BellRing size={21} />}{call.kind === "bill" ? "Nhắc thanh toán" : "Gọi nhân viên"} · lần {call.request_count??1}</strong><small>{call.pending_count??1} lần chưa xử lý</small><time dateTime={new Date(call.created_at).toISOString()}>{tableTime(call.created_at)}</time>{call.note&&<p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{call.note}</p>}</div>{canManageTables && <button type="button" disabled={isItemBusy("call:" + call.id)} onClick={() => void act("call:" + call.id, "tables.manage", () => onResolveCall(call))}>{busyId === "call:" + call.id ? <LoaderCircle size={21} className="spin" /> : <Check size={21} />}Đã hỗ trợ</button>}</div>)}</section>}
             <div className="otb-card-totals"><span>Tổng lượt này<strong>{money(row.total)}</strong><small>{row.validOrders.length} đơn hợp lệ{row.orders.length > row.validOrders.length ? " · " + (row.orders.length - row.validOrders.length) + " đã hủy" : ""}</small></span><span className={row.unpaid ? "unpaid" : "paid"}>{row.unpaid ? "Chưa thanh toán" : "Đã thanh toán"}<strong>{money(row.unpaid || row.paid)}</strong><small>{row.unpaid > 0 ? "Đã thu " + money(row.paid) : row.orders.length ? "Không còn tiền chưa thu" : "Chưa phát sinh đơn"}</small></span></div>
             {latest ? <div className={"otb-latest" + (hasNew ? " new" : "")}><span>{hasNew ? <BellRing size={13} /> : <ReceiptText size={13} />}{hasNew ? "Đơn đang chờ nhận" : "Gọi gần nhất"}<time dateTime={new Date(latest.created_at).toISOString()}>{orderTime(latest.created_at)}</time></span><p>{preview}{latest.items.length > 2 ? " · +" + (latest.items.length - 2) + " món" : ""}</p></div> : <div className="otb-no-orders"><UtensilsCrossed size={17} /><p>{row.orders.length ? "Các đơn của lượt này đã hủy." : "Bàn đã mở, đang chờ khách chọn món."}</p></div>}
-            {canCollect && row.unpaid > 0 && <button type="button" className="otb-table-pay" disabled={isItemBusy("pay:" + session.id)} aria-label={"Thanh toán số tiền còn lại của " + row.name} onClick={() => onCollectTable(session.id)}><Banknote size={24} />Thanh toán cả bàn</button>}
+            {canCollect && row.unpaid > 0 && row.validOrders.every(isOrderFullyServed) && <button type="button" className="otb-table-pay" disabled={isItemBusy("pay:" + session.id)} aria-label={"Thanh toán số tiền còn lại của " + row.name} onClick={() => onCollectTable(session.id)}><Banknote size={24} />Thanh toán cả bàn</button>}
             <div className="otb-card-controls"><button type="button" className={"otb-history-toggle" + (hasNew ? " attention" : "")} aria-expanded={isExpanded} aria-controls={historyId} onClick={() => toggle(session.id)}><span>{hasNew ? <BellRing size={15} /> : <History size={15} />}{hasNew && canManageOrders ? "Xử lý đơn & lịch sử" : "Lịch sử gọi món"}<b>{row.orders.length}</b></span><ChevronDown size={17} className={isExpanded ? "turned" : ""} /></button>{canTransfer && <button type="button" className="otb-transfer-button" disabled={isItemBusy("transfer:" + session.id)} onClick={() => onTransfer(session)}><ArrowRightLeft size={22} />Đổi bàn</button>}{canManageTables && <button type="button" className="otb-close-button" disabled={isItemBusy("close:" + session.id) || !canClose} aria-describedby={contextId + "-close-note-" + session.id} onClick={() => { setActionError(""); setCloseId(session.id); }}><LogOut size={15} />Đóng bàn</button>}</div>
             <p id={contextId + "-close-note-" + session.id} className={"otb-close-note" + (canClose ? " ready" : "")}>{canClose ? <><ShieldCheck size={12} />Sẵn sàng đóng bàn và lưu quyết toán.</> : <><Clock3 size={12} />Còn {row.outstanding} đơn cần phục vụ hoặc thanh toán.</>}</p>
             <TransferHistory transfers={row.transfers} />
@@ -550,6 +538,7 @@ export function OpenTableBoard({ showZones=true, initialView = "matrix", mode = 
             isItemBusy={isItemBusy}
             onOrderStatus={onOrderStatus}
             onLineStatus={onLineStatus}
+            onCancelLine={onCancelLine}
             onCollectTable={onCollectTable}
             onTransfer={onTransfer}
             onCancel={onCancel}

@@ -1,3 +1,4 @@
+import {waitUntil} from "./worker-context";
 import {env} from "cloudflare:workers";
 import {OrderError} from "./menu";
 import type {StaffAccess} from "./staff-permissions";
@@ -73,7 +74,10 @@ export class RealtimeRoom {
  * Publish invalidation event to store room.
  * Fail-open: failure to publish NEVER causes the mutation to fail; adaptive polling remains the safety net.
  */
-export async function notifyRealtimeInvalidation(
+export function notifyRealtimeInvalidation(storeId:string,domain:"board"|"menu"|"orders",revision?:string):Promise<void>{
+ const task=publishInvalidation(storeId,domain,revision);waitUntil(task);return task;
+}
+async function publishInvalidation(
   storeId: string,
   domain: "board" | "menu" | "orders",
   revision?: string
@@ -113,6 +117,7 @@ export async function handleRealtimeUpgrade(
   storeId: string,
   access: StaffAccess | null
 ): Promise<Response> {
+  if(request.headers.get("Origin")!==new URL(request.url).origin)throw new OrderError("Kết nối thời gian thực phải cùng nguồn với quán.",403);
   if (!isRealtimeEnabled()) {
     throw new OrderError("Dịch vụ cập nhật thời gian thực chưa được kích hoạt.", 503);
   }

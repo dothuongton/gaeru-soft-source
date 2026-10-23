@@ -7,6 +7,7 @@ export type Shop = { logo?:string; name:string; tagline:string; hours:string; ad
 export type CartLine = { key:string; itemId:string; quantity:number; extras:string[]; taste:string; note:string };
 export type OrderItem = {
   orderLineId?: string;
+  cancellations?: {requestId:string;quantity:number;reason:string;at:number}[];
   itemId: string;
   name: string;
   quantity: number;
@@ -30,10 +31,10 @@ export type NormalizedOrderItem = OrderItem & {
 };
 export type OrderStatus = "new" | "preparing" | "ready" | "served" | "cancelled";
 export type Order = { id:string; code:string; table_id:string; table_name:string; dining_session_id?:string|null; customer_name?:string; items:OrderItem[]; total:number; note:string; status:OrderStatus; paid:number; paid_at?:number|null; payment_method?:"cash"|"bank"|"other"|"unknown"; cancel_reason:string; created_at:number; updated_at:number };
-export type ServiceRequest = { id:string; table_id:string; table_name:string; session_id?:string|null; note?:string; kind:"service"|"bill"; status:"open"|"done"; created_at:number };
+export type ServiceRequest = { id:string; table_id:string; table_name:string; session_id?:string|null; note?:string; request_count?:number; pending_count?:number; kind:"service"|"bill"; status:"open"|"done"; created_at:number };
 export const categories: { id:Category|"all"; name:string; short:string }[] = [{id:"all",name:"Tất cả món",short:"Tất cả"},{id:"main",name:"Món chính",short:"Món chính"},{id:"light",name:"Ăn nhẹ",short:"Ăn nhẹ"},{id:"drink",name:"Đồ uống",short:"Đồ uống"},{id:"dessert",name:"Tráng miệng",short:"Tráng miệng"}];
 export const statuses: Record<OrderStatus,{label:string;short:string;next?:OrderStatus;action?:string}> = {
- new:{label:"Chờ xác nhận",short:"Đơn mới",next:"preparing",action:"Nhận đơn"},preparing:{label:"Đang chuẩn bị",short:"Đang làm",next:"ready",action:"Món đã sẵn sàng"},ready:{label:"Sẵn sàng phục vụ",short:"Sẵn sàng",next:"served",action:"Đã phục vụ"},served:{label:"Đã phục vụ",short:"Hoàn tất"},cancelled:{label:"Đã hủy",short:"Đã hủy"}
+ new:{label:"Chờ xác nhận",short:"Đơn mới",next:"preparing",action:"Nhận đơn"},preparing:{label:"Đang chuẩn bị",short:"Đang làm",next:"ready",action:"Món đã sẵn sàng"},ready:{label:"Chờ phục vụ",short:"Chờ phục vụ",next:"served",action:"Đã phục vụ"},served:{label:"Đã phục vụ",short:"Hoàn tất"},cancelled:{label:"Đã hủy",short:"Đã hủy"}
 };
 export const money = (n:number) => new Intl.NumberFormat("vi-VN").format(n)+" ₫";
 export const cleanSearch = (s:string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase();
@@ -143,6 +144,7 @@ export function projectOrderStatus(items:OrderItem[],currentStatus:OrderStatus):
  const totalPrep=normalized.reduce((s,it)=>s+it.preparingCount,0);
  const totalNew=normalized.reduce((s,it)=>s+it.newCount,0);
 
+ if(totalQty===0&&items.some(item=>item.cancellations?.length))return "cancelled";
  if(totalQty>0&&totalServed===totalQty)return "served";
  if(totalQty>0&&totalNew===totalQty)return "new";
  if(totalReady>0&&totalNew===0&&totalPrep===0)return "ready";
@@ -158,10 +160,11 @@ export function canCancelOrder(order:Order):boolean{
 }
 
 export function shopInitials(name:string){return name.trim().split(/\s+/).filter(Boolean).slice(0,2).map(word=>Array.from(word)[0]).join("").toLocaleUpperCase("vi-VN")||"Q";}
-export function validateShopLogo(value:unknown):string{
+export function validateShopLogo(value:unknown,maxBytes=165000):string{
  if(value===undefined||value===null||value==="")return "";
  if(typeof value!=="string"||value.length>220000||!/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(value))throw new OrderError("Logo không hợp lệ. Vui lòng tải ảnh PNG, JPG hoặc WebP từ thiết bị.");
  let binary:string;try{binary=atob(value.slice(value.indexOf(",")+1));}catch{throw new OrderError("Dữ liệu logo không hợp lệ.");}
+ if(binary.length>maxBytes)throw new OrderError("Logo quá lớn. Tải lại logo để thu gọn trước khi lưu (tối đa "+Math.floor(maxBytes/1000)+" KB).");
  if(!binary.startsWith("\x89PNG\r\n\x1a\n")||binary.slice(12,16)!=="IHDR"||binary.length<33)throw new OrderError("Dữ liệu ảnh logo không hợp lệ.");
  const size=(offset:number)=>((binary.charCodeAt(offset)*16777216)+(binary.charCodeAt(offset+1)<<16)+(binary.charCodeAt(offset+2)<<8)+binary.charCodeAt(offset+3));
  if(size(16)<1||size(20)<1||size(16)>512||size(20)>512)throw new OrderError("Logo cần được thu gọn trước khi lưu.");
@@ -187,3 +190,6 @@ export function validateExtras(raw:unknown):MenuExtra[]{
 
 // Keep persisted/editor branding intact; public readers receive a cacheable asset URL.
 export function publicShop(shop:Shop,storeId:string):Shop{return {...shop,logo:shop.logo?"/api/branding-icon?store="+encodeURIComponent(storeId)+"&v="+brandingRevision(shop):""};}
+
+/** Legacy orders without per-line counts are evaluated from their recorded status. */
+export function isOrderFullyServed(order:Order):boolean {return order.status!=="cancelled"&&order.items.every((item,index)=>{const line=normalizeOrderItem(item,order.status,index);return line.servedCount===line.quantity;})&&order.status==="served";}

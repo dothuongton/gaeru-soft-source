@@ -52,3 +52,7 @@
 .app-shell[data-view="admin"] .invoice-pagination select{width:65px}
 @media(max-width:350px){.app-shell[data-view="admin"] .invoice-presets{gap:4px}.app-shell[data-view="admin"] .invoice-presets button{padding:7px 9px;font-size:12px}}
 @media(min-width:850px){.app-shell[data-view="admin"] .invoice-search-submit>span{display:inline}}
+.app-shell[data-view="admin"] .invoice-audit{margin:12px 0;border:1px solid var(--aw-line);border-radius:9px;padding:10px}
+.app-shell[data-view="admin"] .invoice-audit summary{min-height:44px;cursor:pointer;font-size:13px}
+.app-shell[data-view="admin"] .invoice-audit article{padding:8px 0;border-top:1px solid var(--aw-line)}
+.app-shell[data-view="admin"] .invoice-audit :is(strong,small){display:block;overflow-wrap:anywhere;font-size:12px}

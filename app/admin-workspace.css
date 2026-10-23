@@ -290,3 +290,10 @@ body:has(.admin-workspace) .pwa-update-banner>button{flex-shrink:0;min-height:44
 .app-shell[data-view="admin"] .zone-delete-confirm{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding-top:10px}
 .app-shell[data-view="admin"] .zone-delete-confirm>span{flex-basis:100%}
 .app-shell[data-view="admin"] .zone-delete-confirm button{border:1px solid var(--aw-line);padding:8px 12px;border-radius:8px}
+
+.app-shell[data-view="admin"] .aw-startup-nav>span{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.app-shell[data-view="admin"] .aw-startup-nav i{width:22px;height:22px;background:var(--aw-soft);border-radius:5px}
+.app-shell[data-view="admin"] .aw-startup-nav i+i{width:44px;height:8px}
+.app-shell[data-view="admin"] .aw-startup-grid>div{background:linear-gradient(var(--aw-soft) 0 12px,transparent 12px);background-size:65% 12px;background-repeat:no-repeat;background-position:14px 18px}
+
+.app-shell[data-view="admin"] .aw-startup-brand{display:flex;align-items:center;gap:10px;min-width:0}.app-shell[data-view="admin"] .aw-startup-brand img{width:40px;height:40px;object-fit:contain;border-radius:8px}.app-shell[data-view="admin"] .aw-startup-brand strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

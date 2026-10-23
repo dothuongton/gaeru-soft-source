@@ -360,3 +360,22 @@
 .app-shell[data-view="admin"] .otb-bill-progress-actions>section{display:flex;flex-direction:column;gap:6px;padding:8px 0}
 .app-shell[data-view="admin"] .otb-bill-progress-actions>section>div{display:flex;flex-wrap:wrap;gap:5px}
 .app-shell[data-view="admin"] .otb-bill-progress-actions>section>strong{font-size:13px}
+/* Keep bill actions clear of Safari toolbars, the home indicator and background navigation. */
+.app-shell[data-view="admin"] .admin-workspace dialog.modal.otb-visit-popup.otb-receipt-popup[open]{inset:calc(12px + env(safe-area-inset-top)) 10px auto;height:min(760px,calc(var(--aw-viewport-height,100dvh) - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));max-height:calc(var(--aw-viewport-height,100dvh) - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));width:calc(100vw - 20px);margin:0 auto}
+.app-shell[data-view="admin"] .bill-item-actions{margin:8px 0 0 33px}
+.app-shell[data-view="admin"] .bill-item-action-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px}
+.app-shell[data-view="admin"] .bill-item-action-row small{flex-basis:100%;color:var(--bill-muted)}
+.app-shell[data-view="admin"] .bill-item-actions button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:44px;padding:7px 10px;border:1px solid var(--bill-line);border-radius:8px;font:inherit;font-size:12px;background:#fff;color:var(--aw-ink)}
+.app-shell[data-view="admin"] .bill-item-actions .bill-serve{background:var(--aw-accent,#244f3c);color:var(--moc-on-accent,#fff);border-color:transparent}
+.app-shell[data-view="admin"] .bill-item-actions .bill-cancel{color:#9b382d;background:#fff8f6}
+.app-shell[data-view="admin"] .bill-cancel-confirm{margin-top:8px;border:1px solid #e4b4aa;border-radius:8px;padding:10px;background:#fff8f6;display:grid;gap:8px}
+.app-shell[data-view="admin"] .bill-cancel-confirm label{display:grid;gap:3px;min-width:0}
+.app-shell[data-view="admin"] .bill-cancel-confirm input{min-width:0;width:100%;min-height:44px;padding:7px;background:white;border:1px solid var(--bill-line);border-radius:6px;font-size:16px}
+.app-shell[data-view="admin"] .bill-cancel-confirm>div{display:flex;gap:6px;flex-wrap:wrap}
+.app-shell[data-view="admin"] .bill-cancelled-note{color:#9b382d}
+@media(min-width:768px){.app-shell[data-view="admin"] .admin-workspace dialog.modal.otb-visit-popup.otb-receipt-popup[open]{inset:16px 16px auto auto;margin:0;width:min(600px,calc(100vw - 32px))}}
+@media(max-height:550px){.app-shell[data-view="admin"] .admin-workspace dialog.modal.otb-visit-popup.otb-receipt-popup[open]{height:calc(var(--aw-viewport-height,100dvh) - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom));max-height:calc(var(--aw-viewport-height,100dvh) - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}}
+.app-shell[data-view="admin"] .otb-bill .bill-history>div{display:block}
+.app-shell[data-view="admin"] .bill-history article{padding:8px 0;border-top:1px solid var(--bill-line)}
+.app-shell[data-view="admin"] .bill-history article :is(strong,small){display:block;font-size:12px}
+.app-shell[data-view="admin"] .bill-history article p{font-size:12px;margin:4px 0;overflow-wrap:anywhere}

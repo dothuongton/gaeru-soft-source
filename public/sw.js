@@ -1,7 +1,7 @@
 /* eslint-disable no-restricted-globals */
 // GAERU Soft Service Worker — PWA, offline fallback & Staff Web Push
 
-const CACHE_NAME = "gaeru-static-v2";
+const CACHE_NAME = "gaeru-static-v3";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
@@ -34,7 +34,10 @@ self.addEventListener("activate", (event) => {
             .map((key) => caches.delete(key))
         )
       )
-      .then(() => self.clients.claim())
+      .then(async () => {
+        if (self.registration?.navigationPreload) {try {await self.registration.navigationPreload.enable();} catch { /* Unsupported browser configuration. */ }}
+        return self.clients.claim();
+      })
   );
 });
 
@@ -67,7 +70,7 @@ self.addEventListener("fetch", (event) => {
   // CRITICAL: Never cache dynamic table/session HTML to prevent leaking customer order states.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(async () => {
+      Promise.resolve(event.preloadResponse).catch(() => undefined).then(response => response || fetch(request)).catch(async () => {
         const cache = await caches.open(CACHE_NAME);
         const cachedOffline = await cache.match(OFFLINE_URL);
         return (
@@ -98,7 +101,7 @@ self.addEventListener("fetch", (event) => {
   const isPrecached = PRECACHE_ASSETS.includes(url.pathname);
   const isHashedAsset =
     url.pathname.startsWith("/_next/static/") ||
-    (url.pathname.startsWith("/assets/") && /[-.][a-f0-9]{8,}\./i.test(url.pathname));
+    (url.pathname.startsWith("/assets/") && /[-.][A-Za-z0-9_-]{8,}\.(?:js|css|woff2?|png|webp|svg)$/.test(url.pathname));
 
   if (isPrecached || isHashedAsset) {
     event.respondWith(
@@ -107,7 +110,7 @@ self.addEventListener("fetch", (event) => {
           return cached;
         }
         return fetch(request).then((response) => {
-          if (response && response.status === 200 && response.type === "basic") {
+          if (response && response.status === 200 && response.type === "basic" && (isPrecached || /javascript|ecmascript|text\/css|font\/|image\//i.test(response.headers.get("Content-Type") || ""))) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           }

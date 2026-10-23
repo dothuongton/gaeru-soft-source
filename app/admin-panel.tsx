@@ -89,6 +89,7 @@ import {
   type ServiceRequest,
 } from "@/lib/menu";
 import type { TableTransfer } from "@/lib/table-transfer-types";
+import {connectStaffRealtime} from "@/lib/staff-realtime";
 import { AdminStartup, AdminWorkspace, AdminSettingsHome, AdminBack, operationalTabs } from "./admin-workspace";
 import {
   type AdminData,
@@ -223,15 +224,16 @@ export default function AdminPanel({
     setConfirmPaid(order);
   }
 
-  const [focusTableId, setFocusTableId] = useState<string | null>(null),
-    [focusRevision, setFocusRevision] = useState(0);
+  const [{tableId:focusTableId,revision:focusRevision},setTableFocus] = useState<{tableId:string|null;revision:number}>({tableId:null,revision:0});
+  const handleTableFocus = useCallback((tableId:string,revision:number)=>{
+    setTableFocus(current=>current.tableId===tableId&&current.revision===revision?{...current,tableId:null}:current);
+  },[]);
   const notifications = useAdminOrderAlerts(displaySettings.popupSeconds, staffNotificationKey(activeStoreId(),access?.userId??null));
   const alertUserId = useRef(access?.userId ?? null);
 
   function openTable(tableId: string) {
     if (!canOrders) return;
-    setFocusTableId(tableId);
-    setFocusRevision(n => n + 1);
+    setTableFocus(current=>({tableId,revision:current.revision+1}));
     switchAdminTab("orders");
   }
 
@@ -301,6 +303,7 @@ export default function AdminPanel({
     [staff, tab, initialDashboard, onShopChange, onDisplaySettings, onThemeSettings, onAccessChange, notifications.observeDashboard, notifications.restrictAlerts, notifications.resetAlerts]
   );
 
+  useEffect(()=>{if(!staff||!data?.realtimeEnabled)return;return connectStaffRealtime(activeStoreId(),()=>{void reload(true);});},[staff,data?.realtimeEnabled,reload,permissionKey]);
   const pollerRef = useRef<AdaptiveScheduler | null>(null);
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -337,7 +340,7 @@ export default function AdminPanel({
       setData(null);
       notifications.resetAlerts();
     }
-    if (!canOrders) setFocusTableId(null);
+    if (!canOrders) setTableFocus(current => ({ ...current, tableId: null }));
     if (!canPay) {
       setConfirmPaid(null);
       setTablePaymentSessionId(null);
@@ -557,6 +560,7 @@ export default function AdminPanel({
       </main>
     );
 
+  if(!data&&!error)return <AdminStartup/>;
   return (
     <AdminWorkspace
       shop={shop}
@@ -574,7 +578,7 @@ export default function AdminPanel({
       canOrders={canOrders}
       canTables={canTables}
       pendingCount={data?.sessions.filter(s => s.status === "pending").length ?? 0}
-      supportCount={data?.calls.length ?? 0}
+      supportCount={data?.calls.reduce((sum,call)=>sum+(call.pending_count??1),0) ?? 0}
       newOrdersCount={data?.orders.filter(o => o.status === "new").length ?? 0}
     >
       {!operationalTabs.includes(tab) && tab !== "home" && (
@@ -653,12 +657,14 @@ export default function AdminPanel({
                 isBusy={id => isBusy(`order:${id}`) || isBusy(`session:${id}`) || isBusy(`call:${id}`)}
                 focusTableId={focusTableId}
                 focusRevision={focusRevision}
+                onFocusHandled={handleTableFocus}
                 onSessionAction={sessionAction}
                 onOrderStatus={(order, next) => mutate("order", { id: order.id, status: next }, "Đã cập nhật trạng thái đơn.", `order:${order.id}`)}
-                onLineStatus={(orderId, orderLineId, toStatus, count,fromStatus) => mutate("order", { id: orderId, orderLineId, action: "line_transition", toStatus, count,fromStatus }, "Đã cập nhật tiến độ món.", `order:${orderId}`)}
+                onLineStatus={(orderId, orderLineId, toStatus, count,fromStatus,expectedUpdatedAt) => mutate("order", { id: orderId, orderLineId, action: "line_transition", toStatus, count,fromStatus,expectedUpdatedAt }, "Đã cập nhật tiến độ món.", `order:${orderId}`)}
                 onResolveCall={call => mutate("call", { id: call.id, createdAt: call.created_at }, "Đã xác nhận hỗ trợ bàn.", `call:${call.id}`)}
                 onTransfer={setTransferSession}
                 onCollect={openPayment}
+                onCancelLine={(order,orderLineId,count,reason,requestId)=>mutate("order",{id:order.id,action:"line_cancel",orderLineId,count,reason,requestId,expectedUpdatedAt:order.updated_at},"Đã hủy phần chưa phục vụ và cập nhật bill.",`order:${order.id}`)}
                 onCollectTable={setTablePaymentSessionId}
                 onCancel={order => {
                   setCancelOrder(order);
@@ -931,8 +937,7 @@ export default function AdminPanel({
             onTransferred={result => {
               setTransferSession(null);
               setRevenueRevision(n => n + 1);
-              setFocusTableId(result.session.table_id);
-              setFocusRevision(n => n + 1);
+              setTableFocus(current => ({ tableId: result.session.table_id, revision: current.revision + 1 }));
               void reload(true);
               void onMenuRefresh().catch(() => {});
               notify(
@@ -1270,7 +1275,7 @@ function ShopForm({ shop, working, onSave }: { shop: Shop; working: boolean; onS
           const f = new FormData(e.currentTarget);
           if (logoBusy || working) return;
           void onSave({
-            logo,
+            ...(logo===shop.logo?{}:{logo}),
             name: String(f.get("name")),
             tagline: String(f.get("tagline")),
             hours: String(f.get("hours")),

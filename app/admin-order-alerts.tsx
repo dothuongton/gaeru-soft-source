@@ -1,7 +1,7 @@
 "use client";
 
 import {useCallback, useEffect, useRef, useState} from "react";
-import {ArrowUpRight, BellRing, DoorOpen, X} from "lucide-react";
+import {ArrowUpRight, BellRing, DoorOpen, ReceiptText, UtensilsCrossed, X} from "lucide-react";
 import {money} from "@/lib/menu";
 import type {Order, ServiceRequest} from "@/lib/menu";
 import {ADMIN_ALERT_DURATION_MS, collectOrderAlerts} from "@/lib/admin-notifications";
@@ -464,7 +464,9 @@ export function useAdminOrderAlerts(popupSeconds = 3, preferenceKey: string | nu
     const currentTiming = resolvePopupTiming(timing.current, id, configuredSeconds.current);
     timing.current = currentTiming;
     setDisplayTiming(currentTiming);
-    const timer = setTimeout(() => setQueue(previous => previous[0]?.id === id ? previous.slice(1) : previous), currentTiming.durationMs);
+    let timer:ReturnType<typeof setTimeout>;
+    const expire=()=>{const popup=document.querySelector(".admin-order-popup");if(popup&&(popup.matches(":hover")||popup.contains(document.activeElement))){timer=setTimeout(expire,1000);return;}setQueue(previous=>previous[0]?.id===id?previous.slice(1):previous);};
+    timer=setTimeout(expire,currentTiming.durationMs);
     return () => clearTimeout(timer);
   }, [active?.id, visible]);
 
@@ -515,16 +517,16 @@ export function NewOrderPopup({
     onDismiss();
   };
 
-  return <div key={alert.id} ref={ref} popover="manual" className="admin-order-popup" role="status" aria-live="polite" aria-atomic="true">
-    <span className="admin-order-popup-icon">{opening ? <DoorOpen size={25}/> : <BellRing size={25}/>}</span>
+  return <div key={alert.id} ref={ref} popover="manual" className={"admin-order-popup alert-"+(support?alert.requestKind:opening?"opening":"order")} role="status" aria-live="polite" aria-atomic="true">
+    <span className="admin-order-popup-icon">{support?alert.requestKind==="bill"?<ReceiptText size={23}/>:<BellRing size={23}/>:opening?<DoorOpen size={23}/>:<UtensilsCrossed size={23}/>}</span>
     <div className="admin-order-popup-content">
-      <span className="admin-order-popup-label">{support ? "BÀN CẦN HỖ TRỢ" : opening ? "YÊU CẦU MỞ BÀN MỚI" : "CÓ ĐƠN GỌI MÓN MỚI"}</span>
-      <strong>{alert.tableName} · {opening ? "Mở bàn mới" : support ? "Cần hỗ trợ" : `${alert.orderCount} đơn mới`}</strong>
+      <span className="admin-order-popup-label">{support ? alert.requestKind==="bill"?"NHẮC THANH TOÁN":"GỌI NHÂN VIÊN" : opening ? "YÊU CẦU MỞ BÀN MỚI" : "CÓ ĐƠN GỌI MÓN MỚI"}</span>
+      <strong>{alert.tableName} · {opening ? "Mở bàn mới" : support ? "Lần "+(alert.requestCount??1) : `${alert.orderCount} đơn mới`}</strong>
       <span className="sr-only">{adminAlertSpeech(alert)}</span>
-      <p>{support ? "Đang chờ nhân viên hỗ trợ" : opening ? (alert.customerName ? "Khách: " + alert.customerName + " · " : "") + "Đang chờ quản trị xác nhận" : <>{alert.orderCount} đơn mới{canSeeMoney ? " · " + money(alert.total) : ""}{alert.customerName ? " · " + alert.customerName : ""}</>}</p>
-      <button type="button" style={{ minHeight: 44, minWidth: 44 }} onClick={handleAction}>{(opening || support) ? "Xem yêu cầu" : onOpenOrder ? "Xem đơn" : "Xử lý đơn"}<ArrowUpRight size={14}/></button>
+      <p>{support ? (alert.pendingCount??1)+" lần chưa xử lý"+(alert.note?" · "+alert.note:"") : opening ? (alert.customerName ? "Khách: " + alert.customerName + " · " : "") + "Đang chờ quản trị xác nhận" : <>{alert.orderCount} đơn mới{canSeeMoney ? " · " + money(alert.total) : ""}{alert.customerName ? " · " + alert.customerName : ""}</>}</p>
+      <button type="button" style={{ minHeight: 44, minWidth: 44 }} onClick={handleAction}>{(opening || support) ? "Mở bàn xử lý" : onOpenOrder ? "Mở đơn mới" : "Xử lý đơn"}<ArrowUpRight size={14}/></button>
     </div>
-    <button type="button" className="admin-order-popup-close" style={{ minWidth: 44, minHeight: 44 }} aria-label={opening ? "Ẩn thông báo, giữ yêu cầu mở bàn chờ xử lý" : "Ẩn thông báo, giữ đơn mới trên bàn"} onClick={onDismiss}><X size={18}/></button>
+    <button type="button" className="admin-order-popup-close" style={{ minWidth: 44, minHeight: 44 }} aria-label={support?"Ẩn thông báo, giữ yêu cầu hỗ trợ trên bàn":opening ? "Ẩn thông báo, giữ yêu cầu mở bàn chờ xử lý" : "Ẩn thông báo, giữ đơn mới trên bàn"} onClick={onDismiss}><X size={18}/></button>
     {waiting > 0 && <span className="admin-order-popup-waiting">Còn {waiting} thông báo</span>}
     <span className="admin-order-popup-timer" key={alert.id} style={{animationDuration: `${durationMs}ms`}} aria-hidden="true"/>
   </div>;

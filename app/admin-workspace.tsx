@@ -1,5 +1,7 @@
 "use client";
-import {useRef,useEffect} from "react";
+import {readStartupBranding} from "@/lib/staff-startup-branding";
+import {activeStoreId} from "@/lib/store-links";
+import {useRef,useEffect,useState} from "react";
 import type {ReactNode,RefObject} from "react";
 import {Bell,ChevronLeft,ChevronRight,ChartNoAxesCombined,Mic,Settings2,Store,Table2,UtensilsCrossed,Volume2,VolumeX,LoaderCircle} from "lucide-react";
 import {money,shopInitials,type Shop} from "@/lib/menu";
@@ -33,12 +35,17 @@ function useAdminViewport(workspace:RefObject<HTMLElement|null>){
 }
 
 export function AdminStartup(){
+ const [branding,setBranding]=useState<{name:string;logo:string}|null>(null);
+ useEffect(()=>{let storage:Storage|null=null;try{storage=window.localStorage;}catch{}
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate public branding after matching server HTML, never account or board data.
+  setBranding(readStartupBranding(storage,activeStoreId()));
+ },[]);
  const workspace=useRef<HTMLElement>(null);
  useAdminViewport(workspace);
  return <section ref={workspace} className="admin-workspace aw-startup" aria-busy="true" aria-label="Đang mở quản trị cửa hàng">
-  <header className="aw-header"><strong>Quản trị cửa hàng</strong><LoaderCircle size={20} className="spin"/></header>
-  <div className="aw-content"><p role="status">Đang kết nối và kiểm tra tài khoản…</p><div className="aw-startup-grid" aria-hidden="true">{[1,2,3,4].map(id=><div key={id}/>)}</div></div>
-  <nav className="aw-nav" aria-label="Điều hướng đang tải">{[{name:"Bàn",icon:Table2},{name:"Đơn món",icon:UtensilsCrossed},{name:"Hỗ trợ",icon:Bell},{name:"Cài đặt",icon:Settings2}].map(item=><button type="button" disabled key={item.name}><item.icon size={24}/><span>{item.name}</span></button>)}</nav>
+  <header className="aw-header"><div className="aw-startup-brand">{branding?.logo&&<img src={branding.logo} alt=""/>}<strong>{branding?.name||"Quản trị cửa hàng"}</strong></div><LoaderCircle size={20} className="spin"/></header>
+  <div className="aw-content"><h1>Sơ đồ bàn</h1><p role="status">Đang đồng bộ với quán…</p><div className="aw-startup-grid" aria-hidden="true">{[1,2,3,4].map(id=><div key={id}/>)}</div></div>
+  <div className="aw-nav aw-startup-nav" aria-hidden="true">{[1,2,3,4].map(id=><span key={id}><i/><i/></span>)}</div>
  </section>;
 }
 

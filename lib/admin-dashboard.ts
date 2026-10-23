@@ -1,3 +1,4 @@
+import {isRealtimeEnabled} from "./realtime-do";
 import {getTableZones} from "./table-zones-server";
 import type {DiningTable} from "./menu";
 import {database,getMenu,getShop,publicOrder} from "./server";
@@ -50,5 +51,5 @@ export async function adminDashboard(access:StaffAccess,includeMenu=true){
   ])
  ]);
  const zoneSettings=await getTableZones(board[0].results as DiningTable[]);
- return {access,items,shop,displaySettings,themeSettings,zoneSettings,tables:board[0].results,orders:(board[1].results as Record<string,unknown>[]).map(publicOrder),calls:board[2].results,stats:board[3].results[0],sessions:board[4].results,transfers:(board[5].results as Record<string,unknown>[]).map(publicTransfer)};
+ return {realtimeEnabled:isRealtimeEnabled(),access,items,shop,displaySettings,themeSettings,zoneSettings,tables:board[0].results,orders:(board[1].results as Record<string,unknown>[]).map(publicOrder),calls:board[2].results,stats:board[3].results[0],sessions:board[4].results,transfers:(board[5].results as Record<string,unknown>[]).map(publicTransfer)};
 }

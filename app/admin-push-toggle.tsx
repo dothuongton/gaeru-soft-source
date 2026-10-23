@@ -200,7 +200,7 @@ function PushControl({ notify, storeId, userId }: { notify: (msg: string,kind?:"
 
     try {
       const deviceId = getOrCreateDeviceId();
-      const res = await pushApi<{ success: boolean; delivered: number; error?: string }>("admin/push/test", {
+      const res = await pushApi<{ success: boolean; delivered: number; error?: string;correlationId?:string }>("admin/push/test", {
         method: "POST",
         body: JSON.stringify({ deviceId }),
       });
@@ -208,7 +208,7 @@ function PushControl({ notify, storeId, userId }: { notify: (msg: string,kind?:"
       if (res.success) {
         notify("Dịch vụ push đã nhận yêu cầu. Hãy kiểm tra thông báo trên thiết bị.");
       } else {
-        notify(res.error || "Gửi thử nghiệm không thành công.","error");
+        notify((res.error||"Gửi thử nghiệm không thành công.")+(res.correlationId&&!res.error?.includes(res.correlationId)?" Mã đối chiếu: "+res.correlationId+".":""),"error");
       }
     } catch (err) {
       notify((err as Error).message || "Lỗi khi gửi thông báo thử nghiệm.","error");

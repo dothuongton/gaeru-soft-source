@@ -336,10 +336,13 @@ export async function sendTestPush(params: {
   userId: string;
   deviceId: string;
   storeId: string;
-}): Promise<{ success: boolean; delivered: number; error?: string }> {
+}): Promise<{ success: boolean; delivered: number; error?: string;correlationId:string }> {
+  const correlationId=crypto.randomUUID().slice(0,8);
+  const report=(details:Record<string,unknown>)=>console.info(JSON.stringify({event:"staff_push_test",correlationId,...details}));
   const config = getVapidConfig();
+  report({phase:"config",enabled:config.enabled,publicKeyPresent:!!config.publicKey,privateKeyPresent:!!config.privateKey});
   if (!config.enabled || !config.publicKey || !config.privateKey) {
-    return { success: false, delivered: 0, error: "Hệ thống chưa cấu hình VAPID keys cho Web Push." };
+    return { correlationId,success: false, delivered: 0, error: "Hệ thống chưa cấu hình VAPID keys cho Web Push." };
   }
 
   const { userId, deviceId, storeId } = params;
@@ -350,8 +353,9 @@ export async function sendTestPush(params: {
     .bind(userId, deviceId)
     .all<PushSubscriptionRow>();
 
+  report({phase:"subscriptions",count:subs.results?.length??0});
   if (!subs.results || subs.results.length === 0) {
-    return { success: false, delivered: 0, error: "Thiết bị này chưa đăng ký nhận thông báo đẩy." };
+    return { correlationId,success: false, delivered: 0, error: "Thiết bị này chưa đăng ký nhận thông báo đẩy." };
   }
 
   const messageData: PushMessage = {
@@ -381,6 +385,8 @@ export async function sendTestPush(params: {
         continue;
       }
 
+      const host=new URL(sub.endpoint).hostname;const provider=host.endsWith("push.apple.com")?"apple":host.endsWith("mozilla.com")?"mozilla":host.endsWith("googleapis.com")?"google":"other";
+
       const payload = await buildPushPayload(
         messageData,
         {
@@ -406,6 +412,7 @@ export async function sendTestPush(params: {
         signal: AbortSignal.timeout(10000),
       });
 
+      report({phase:"provider_response",provider,status:response.status});
       if (response.ok || response.status === 201) {
         delivered++;
         await db
@@ -422,11 +429,11 @@ export async function sendTestPush(params: {
         let reason="";
         try{const body=await response.json() as {reason?:unknown};if(typeof body.reason==="string"&&/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(body.reason))reason=body.reason;}catch{/* Providers may return a non-JSON error. */}
         if(reason)failure+=" Mã lỗi: "+reason+".";
-        console.warn("Test push rejected",response.status,reason);
+        report({phase:"provider_rejected",status:response.status,reason});
       }
     } catch (err) {
       failure=err instanceof Error&&err.name==="TimeoutError"?"Dịch vụ push phản hồi quá chậm. Vui lòng thử lại.":"Không tạo hoặc gửi được thông báo. Kiểm tra cặp khóa VAPID và kết nối máy chủ.";
-      console.warn("Test push error:", err instanceof Error?err.name:"unknown");
+      report({phase:"error",name:err instanceof Error?err.name:"unknown"});
     }
   }
 
@@ -436,5 +443,6 @@ export async function sendTestPush(params: {
     }
   }
 
-  return { success: delivered > 0, delivered,...(delivered?{}:{error:failure}) };
+  report({phase:"complete",acceptedByProvider:delivered});
+  return {correlationId,success:delivered>0,delivered,...(delivered?{}:{error:failure+" Mã đối chiếu: "+correlationId+"."})};
 }

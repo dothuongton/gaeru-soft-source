@@ -18,7 +18,7 @@ test("the multi-store migration preserves every existing record and assigns only
    originals.set(name,db.prepare(`SELECT * FROM ${name}`).all());
   }
   for(const name of migrations.slice(upgrade))db.exec(readFileSync(new URL("../drizzle/"+name,import.meta.url),"utf8"));
-  for(const name of tables){const rows=db.prepare(`SELECT * FROM ${name}`).all();for(const row of rows){if(name!=="staff_owner_bindings"){assert.equal(row.store_id,"main");delete row.store_id;}}assert.deepEqual(rows,originals.get(name),name+" must preserve all columns");}
+  for(const name of tables){const rows=db.prepare(`SELECT * FROM ${name}`).all();for(const row of rows){if(name!=="staff_owner_bindings"){assert.equal(row.store_id,"main");delete row.store_id;}}const original=originals.get(name);const keys=Object.keys(original[0]);assert.deepEqual(rows.map(row=>Object.fromEntries(keys.map(key=>[key,row[key]]))),original.map(row=>({...row})),name+" must preserve all original columns");}
   assert.deepEqual(db.prepare("PRAGMA integrity_check").get(),Object.assign(Object.create(null),{integrity_check:"ok"}));
  }finally{db.close();}
 });

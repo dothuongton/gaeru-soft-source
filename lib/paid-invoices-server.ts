@@ -7,7 +7,7 @@ import type {PaymentMethod} from './revenue-types';
 // Every table-payment receipt represents one actual collection, not one order.
 // Legacy individually paid orders remain visible without duplicating receipts.
 const source=`
- SELECT 'payment:'||r.id AS id,r.table_id AS tableId,r.table_name AS tableName,r.customer_name AS customerName,r.paid_at AS paidAt,r.amount AS amount,r.payment_method AS method,r.order_count AS orderCount,'table' AS source
+ SELECT 'payment:'||r.id AS id,COALESCE(json_extract(r.orders_json,'$[0].table_id'),r.table_id) AS tableId,COALESCE(json_extract(r.orders_json,'$[0].table_name'),r.table_name) AS tableName,COALESCE(json_extract(r.orders_json,'$[0].customer_name'),r.customer_name) AS customerName,r.paid_at AS paidAt,r.amount AS amount,r.payment_method AS method,r.order_count AS orderCount,'table' AS source
  FROM table_payment_receipts r
  UNION ALL
  SELECT 'order:'||o.id AS id,o.table_id AS tableId,o.table_name AS tableName,o.customer_name AS customerName,o.paid_at AS paidAt,o.total AS amount,COALESCE(o.payment_method,'unknown') AS method,1 AS orderCount,'legacy' AS source
@@ -43,8 +43,10 @@ export async function paidInvoiceDetail(id:string):Promise<PaidInvoiceDetail>{
  const db=database();
  const row=await db.prepare(`WITH invoices AS (${source}) SELECT * FROM invoices WHERE id = ?`).bind(id).first<Record<string,unknown>>();
  if(!row)throw new OrderError('Không tìm thấy hóa đơn đã thanh toán.',404);
+ const receipt=id.startsWith('payment:')?await db.prepare('SELECT orders_json,order_ids_json,audit_json FROM table_payment_receipts WHERE id = ?').bind(id.slice(8)).first<{orders_json:string|null;order_ids_json:string;audit_json:string|null}>():null;
+ if(receipt?.orders_json){const ids=JSON.parse(receipt.order_ids_json) as string[];return {invoice:invoice(row),orders:(JSON.parse(receipt.orders_json) as import("./menu").Order[]).map(order=>ids.includes(order.id)?{...order,paid:1,paid_at:Number(row.paidAt),payment_method:invoice(row).method}:order),snapshot:true,history:receipt.audit_json?JSON.parse(receipt.audit_json):[]};}
  const orders=id.startsWith('payment:')?
   await db.prepare('SELECT * FROM orders WHERE id IN (SELECT value FROM table_payment_receipts r,json_each(r.order_ids_json) WHERE r.id = ?) ORDER BY created_at,id').bind(id.slice(8)).all<Record<string,unknown>>():
   await db.prepare('SELECT * FROM orders WHERE id = ? AND paid = 1 AND status != ?').bind(id.slice(6),'cancelled').all<Record<string,unknown>>();
- return {invoice:invoice(row),orders:orders.results.map(publicOrder)};
+ return {invoice:invoice(row),orders:orders.results.map(publicOrder),snapshot:false};
 }

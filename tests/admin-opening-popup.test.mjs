@@ -53,7 +53,7 @@ const plain = (html) => html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").repl
 
 test("the opening popup identifies the table and customer and directs staff to the pending request", () => {
   const html = render(openingAlert), content = plain(html);
-  for (const phrase of ["YÊU CẦU MỞ BÀN MỚI", "Bàn 01 có khách yêu cầu mở bàn", "Nguyễn Minh", "Xem yêu cầu"]) {
+  for (const phrase of ["YÊU CẦU MỞ BÀN MỚI", "Bàn 01 có khách yêu cầu mở bàn", "Nguyễn Minh", "Mở bàn xử lý"]) {
     assert.ok(content.includes(phrase), phrase);
   }
   assert.match(html, /role="status"/);

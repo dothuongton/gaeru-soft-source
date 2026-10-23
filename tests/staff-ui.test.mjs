@@ -126,7 +126,8 @@ test("read-only table board keeps customer, order and support information while 
 
 for (const [permission, expected] of Object.entries(mutationButtons)) {
   test(`table board exposes ${permission} controls only to an employee granted that permission`, () => {
-    const allowed = buttons(render(OpenTableBoard, boardProps(normalizePermissions([permission]))));
+    const changes=permission==="payments.collect"?{orders:boardProps([]).orders.map(order=>({...order,status:"served"}))}:{};
+    const allowed = buttons(render(OpenTableBoard, boardProps(normalizePermissions([permission]),changes)));
     for (const label of expected) assert.equal(allowed.includes(label), true, `${permission}: ${label}`);
     for (const [otherPermission, labels] of Object.entries(mutationButtons)) {
       if (otherPermission === permission) continue;
@@ -213,8 +214,8 @@ test("initial staff HTML has a neutral stable shell and no protected data",()=>{
  const {AdminStartup}=load("app/admin-workspace.tsx");
  const html=render(AdminStartup,{});
  assert.match(html,/aria-busy="true"/);
- assert.deepEqual(buttons(html.match(/<nav[\s\S]*?<\/nav>/)[0]),["Bàn","Đơn món","Hỗ trợ","Cài đặt"]);
- assert.equal((html.match(/disabled/g)||[]).length,4);
+ assert.deepEqual(buttons(html),[]);
+ assert.match(html,/Sơ đồ bàn/);
  assert.doesNotMatch(html,/Bàn 01|0 ₫|customer_name/);
 });
 

@@ -1,3 +1,4 @@
+import {env} from "cloudflare:workers";
 import {conditionalJson, conditionalJsonWithEtag} from "@/lib/conditional-json";
 import {inStore, currentStoreId} from "@/lib/store-database";
 import {resolveStore,listStores,createStore,updateStoreStatus,saveStoreBranding} from "@/lib/store-platform";
@@ -19,7 +20,8 @@ import {handleRealtimeUpgrade, notifyRealtimeInvalidation} from "@/lib/realtime-
 import {getVapidConfig, subscribeStaffDevice, unsubscribeStaffDevice, getStaffSubscriptionStatus, dispatchStaffPush, sendTestPush} from "@/lib/staff-push";
 import {listPaidInvoices,paidInvoiceDetail} from "@/lib/paid-invoices-server";
 import {saveTableZones} from "@/lib/table-zones-server";
-import {transitionFromStage} from "@/lib/order-line-transition";
+import {recordServiceReminder} from "@/lib/service-reminders";
+import {cancelUnservedLine,transitionFromStage} from "@/lib/order-line-transition";
 import {
   ensurePlatformSchema,
   isSelfAuthMode,
@@ -50,6 +52,7 @@ async function handleScoped(request:Request){
   const url=new URL(request.url),path=url.pathname.replace(/^\/api\//,"");
   const access=path.startsWith("admin")||path==="menu"||path==="account"?await getStaffAccess(request):null;
   if(path.startsWith("admin")&&!access?.isStaff)throw new OrderError("Tài khoản chưa được cấp quyền hoặc đã bị khóa. Vui lòng đăng nhập bằng tài khoản nhân viên được quản trị cấp quyền.",403);
+  const actor=(access?.account?.name||access?.profile?.fullName||"Nhân viên")+" · "+(access?.userId||access?.account?.id||"staff");
   const allow=(permission:Permission)=>{if(!access||!hasPermission(access,permission))throw new OrderError("Bạn chưa được cấp quyền thực hiện chức năng này.",403);};
   await seed();const db=database();
   if(request.method==="GET"){
@@ -66,8 +69,14 @@ async function handleScoped(request:Request){
     return json({...await getStaffSubscriptionStatus({userId, deviceId}),enabled:config.enabled,vapidPublicKey:config.publicKey||null});
    }
    if(path==="admin/accounts"){allow("staff.manage");return json(await listStaffAccounts(access!));}
-   if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);return conditionalJson(request,{items,shop:publicShop(shop,currentStoreId()),table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings},device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
+   if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);const callSummary=connection.state==="active"&&connection.session?(await db.prepare("SELECT kind,request_count AS requestCount,created_at + 30000 AS nextAllowedAt FROM service_requests WHERE session_id = ?").bind(connection.session.id).all()).results:[];return conditionalJson(request,{callSummary,items,shop:publicShop(shop,currentStoreId()),table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings},device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
    if(path==="orders"){const {tableToken,sessionHint}=readQrEntry(url.searchParams),table=await getTable(tableToken),session=await requireActiveSession(request,table,sessionHint);const r=await db.prepare("SELECT * FROM orders WHERE client_token = ? AND table_id = ? AND dining_session_id = ? ORDER BY created_at DESC,id DESC").bind(session.browser_hash,table.id,session.id).all<Record<string,unknown>>();return json({orders:r.results.map(publicOrder)});}
+   if(path==="admin/bill-history"){
+    if(!access||(!hasPermission(access,"orders.view")&&!hasPermission(access,"revenue.view")))throw new OrderError("Bạn chưa có quyền xem hóa đơn.",403);
+    const sessionId=checkedText(url.searchParams.get("session"),128,true);
+    const result=await db.prepare("SELECT id,order_id AS orderId,kind,actor,at,before_json AS beforeJson,after_json AS afterJson FROM order_audit WHERE session_id = ? ORDER BY id").bind(sessionId).all<Record<string,unknown>>();
+    return json({history:result.results.map(row=>({id:row.id,orderId:row.orderId,kind:row.kind,actor:row.actor,at:row.at,before:row.beforeJson?JSON.parse(String(row.beforeJson)):null,after:JSON.parse(String(row.afterJson))}))});
+   }
    if(path==="admin/invoices"){allow("revenue.view");return json(await listPaidInvoices(url.searchParams));}
    if(path.startsWith("admin/invoices/")){allow("revenue.view");return json(await paidInvoiceDetail(decodeURIComponent(path.slice("admin/invoices/".length))));}
    if(path==="admin/revenue"){allow("revenue.view");return json(await revenueReport(url.searchParams));}
@@ -84,7 +93,7 @@ async function handleScoped(request:Request){
      }
     }
     const data=await adminDashboard(access!,!compact);
-    const payload={...data,compact,shop:compact&&data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop};
+    const payload={...data,compact,shop:data.shop.logo?{...data.shop,logo:"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(data.shop)}:data.shop};
     if(compact){
      const revision=await getBoardRevision(access!,currentStoreId());
      return conditionalJsonWithEtag(request,payload,revision);
@@ -215,34 +224,21 @@ async function handleScoped(request:Request){
   }
   if(request.method==="POST"&&path==="calls"){
    const table=await getTable(checkedText(b.tableToken,80,true)),session=await requireActiveSession(request,table,b.sessionId);if(b.kind!=="service"&&b.kind!=="bill")throw new OrderError("Yêu cầu không hợp lệ.");
-   const id=session.id+":"+b.kind; const requestNote=checkedText(b.note??"",300);
-   const called=await db.prepare("INSERT INTO service_requests (id,table_id,table_name,session_id,kind,status,created_at,note) SELECT ?,?,?,s.id,?,'open',?,? FROM table_sessions s WHERE s.id = ? AND s.table_id = ? AND s.browser_hash = ? AND s.status = 'active' ON CONFLICT(id) DO UPDATE SET status = excluded.status, note = excluded.note, table_name = excluded.table_name, created_at = MAX(service_requests.created_at + 1, excluded.created_at) WHERE service_requests.status = 'done'").bind(id,table.id,table.name,b.kind,Date.now(),requestNote,session.id,table.id,session.browser_hash).run();
-   // A duplicate live call is successful, but a close that won the race must reject this action.
-   if(called.meta.changes===0)await requireActiveSession(request,table,session.id);
-   else{
+   const result=await recordServiceReminder(table,session,b);
+   if(result.accepted){
     notifyRealtimeInvalidation(currentStoreId(),"board");
-    const currentReq=await db.prepare("SELECT created_at FROM service_requests WHERE id = ?").bind(id).first<{created_at:number}>();
-    const gen=currentReq?.created_at??Date.now();
-    dispatchStaffPush({
-      storeId: currentStoreId(),
-      requiredPermission: "tables.manage",
-      eventType: "service_request",
-      eventTag: `${currentStoreId()}:service_request:${session.id}:${b.kind}:${gen}`,
-      title: b.kind==="bill"?"Yêu cầu thanh toán":"Khách gọi nhân viên",
-      body: `${table.name} — ${b.kind==="bill"?"Khách yêu cầu hóa đơn":"Cần hỗ trợ tại bàn"}`,
-      url: "/?view=admin&tab=tables",
-    });
+    dispatchStaffPush({storeId:currentStoreId(),requiredPermission:"tables.manage",eventType:"service_request",eventTag:`${currentStoreId()}:service_request:${session.id}:${b.kind}:${result.requestCount}`,title:b.kind==="bill"?"Nhắc thanh toán":"Khách gọi nhân viên",body:`${table.name} · lần ${result.requestCount}${b.note?" — "+String(b.note):""}`,url:"/?view=admin&tab=support"});
    }
-   return json({ok:true});
+   return json(result);
   }
   if(request.method==="PATCH"&&path==="admin/session"){allow("tables.manage");const result=await updateTableSession(b.id,b.action);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,...result});}
-  if(request.method==="PATCH"&&path==="admin/table-payment"){allow("payments.collect");const res=await payTableBalance(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
+  if(request.method==="PATCH"&&path==="admin/table-payment"){allow("payments.collect");const res=await payTableBalance(b,actor);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
   if(request.method==="PATCH"&&path==="admin/table-transfer"){allow("tables.transfer");const res=await transferTable(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(res);}
   if(request.method==="PATCH"&&path==="admin/zones"){allow("tables.manage");const result=await saveTableZones(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(result);}
   if(request.method==="PATCH"&&path==="admin/display-settings"){allow("settings.manage");return json(await saveDisplaySettings(b));}
   if(request.method==="PATCH"&&path==="admin/theme-settings"){allow("settings.manage");return json(await saveThemeSettings(b));}
   if(request.method==="PATCH"&&path==="admin/order"){
-   allow(b.action==="paid"?"payments.collect":b.status==="cancelled"?"orders.cancel":"orders.manage");
+   allow(b.action==="paid"?"payments.collect":b.action==="line_cancel"||b.status==="cancelled"?"orders.cancel":"orders.manage");
    const id=checkedText(b.id,60,true),old=await db.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<Record<string,unknown>>();if(!old)throw new OrderError("Không tìm thấy đơn.",404);
    if(b.action==="paid"){
     if(b.paymentMethod!==undefined&&!["cash","bank","other"].includes(b.paymentMethod))throw new OrderError("Phương thức thanh toán không hợp lệ.");
@@ -250,14 +246,32 @@ async function handleScoped(request:Request){
     // Only the first successful confirmation records collection time/method.
     // A retried request, including a competing cashier request, is idempotent.
     if(old.paid!==1){
-     const now=Date.now(),paidUpdate=await db.prepare("UPDATE orders SET paid = 1, paid_at = ?, payment_method = ?, updated_at = ? WHERE id = ? AND status != ? AND paid = 0").bind(now,b.paymentMethod??"unknown",now,id,"cancelled").run();
+     const now=Date.now(),paidUpdate=await db.prepare("UPDATE orders SET paid = 1, paid_at = ?, payment_method = ?, updated_at = ?, last_actor = ? WHERE id = ? AND status != ? AND paid = 0").bind(now,b.paymentMethod??"unknown",now,actor,id,"cancelled").run();
      if(paidUpdate.meta.changes!==1){
       const latest=await db.prepare("SELECT paid,status FROM orders WHERE id = ?").bind(id).first<{paid:number;status:string}>();
       if(latest?.paid!==1||latest.status==="cancelled")throw new OrderError("Đơn vừa bị hủy. Chưa ghi nhận thanh toán.",409);
      }
     }
+   }else if(b.action==="line_cancel"){
+    const lineId=checkedText(b.orderLineId,60,true),reason=checkedText(b.reason,180,true),requestId=checkedText(b.requestId,36,true);
+    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(requestId))throw new OrderError("Mã yêu cầu hủy món không hợp lệ.");
+    const rawItems=JSON.parse(old.items as string) as OrderItem[];
+    const replay=rawItems.flatMap(item=>(item.cancellations??[]).map(value=>({...value,lineId:item.orderLineId}))).find(value=>value.requestId===requestId);
+    if(replay){if(replay.lineId!==lineId||replay.reason!==reason||replay.quantity!==b.count)throw new OrderError("Mã yêu cầu hủy món đã dùng cho nội dung khác.",409);return json({ok:true,replayed:true});}
+    if(old.paid||old.status==="cancelled")throw new OrderError("Món đã thanh toán hoặc đã hủy. Không thể hủy thêm.",409);
+    const index=rawItems.findIndex((item,index)=>normalizeOrderItem(item,old.status as OrderStatus,index).orderLineId===lineId);
+    if(index<0)throw new OrderError("Không tìm thấy món cần hủy.",404);
+    if(b.expectedUpdatedAt!==old.updated_at)throw new OrderError("Đơn vừa thay đổi. Kiểm tra lại món trước khi hủy.",409);
+    const updatedItems=rawItems.map((item,i)=>normalizeOrderItem(item,old.status as OrderStatus,i));
+    updatedItems[index]=cancelUnservedLine(updatedItems[index],b.count,reason,requestId,Date.now());
+    const nextStatus=projectOrderStatus(updatedItems,old.status as OrderStatus);
+    const activeTotal=updatedItems.reduce((sum,item)=>sum+item.total,0);
+    const total=nextStatus==="cancelled"?updatedItems.reduce((sum,item)=>sum+item.unitPrice*(item.cancellations??[]).reduce((n,value)=>n+value.quantity,0),0):activeTotal;
+    const changed=await db.prepare("UPDATE orders SET items = ?, total = ?, status = ?, cancel_reason = ?, updated_at = ?, last_actor = ? WHERE id = ? AND paid = 0 AND status != 'cancelled' AND updated_at = ? AND items = ? AND (dining_session_id IS NULL OR EXISTS (SELECT 1 FROM table_sessions s WHERE s.id = orders.dining_session_id AND s.status = 'active'))").bind(JSON.stringify(updatedItems),total,nextStatus,nextStatus==="cancelled"?reason:old.cancel_reason,Math.max(Date.now(),Number(old.updated_at)+1),actor,id,old.updated_at,old.items).run();
+    if(changed.meta.changes!==1)throw new OrderError("Món vừa được phục vụ, thanh toán hoặc cập nhật. Chưa hủy món; hãy tải lại.",409);
    }else if(b.action==="line_transition"||b.orderLineId){
     if(old.status==="cancelled")throw new OrderError("Đơn đã hủy không thể cập nhật món.",409);
+    if(b.expectedUpdatedAt!==undefined&&b.expectedUpdatedAt!==old.updated_at)throw new OrderError("Đơn vừa thay đổi. Vui lòng kiểm tra lại món.",409);
     const lineId=checkedText(b.orderLineId,60,true);
     const toStatus=b.toStatus as OrderStatus;
     if(!["preparing","ready","served"].includes(toStatus))throw new OrderError("Trạng thái món không hợp lệ.");
@@ -293,7 +307,7 @@ async function handleScoped(request:Request){
     });
     if(!found)throw new OrderError("Không tìm thấy món cần cập nhật.",404);
     const nextStatus=projectOrderStatus(updatedItems,old.status as OrderStatus);
-    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, updated_at = ? WHERE id = ? AND updated_at = ? AND items = ?").bind(JSON.stringify(updatedItems),nextStatus,Date.now(),id,old.updated_at,old.items).run();
+    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, updated_at = ?, last_actor = ? WHERE id = ? AND updated_at = ? AND items = ?").bind(JSON.stringify(updatedItems),nextStatus,Math.max(Date.now(),Number(old.updated_at)+1),actor,id,old.updated_at,old.items).run();
     if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
    }else{
     if(old.paid&&b.status==="cancelled")throw new OrderError("Đơn đã thanh toán. Vui lòng xử lý hoàn tiền trực tiếp tại quầy.",409);
@@ -314,11 +328,11 @@ async function handleScoped(request:Request){
      return norm;
     });
     const reason=b.status==="cancelled"?checkedText(b.reason,180,true):"";
-    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, cancel_reason = ?, updated_at = ? WHERE id = ? AND status = ?"+(b.status==="cancelled"?" AND paid = 0":"")).bind(JSON.stringify(updatedItems),b.status,reason,Date.now(),id,old.status).run();
+    const changed=await db.prepare("UPDATE orders SET items = ?, status = ?, cancel_reason = ?, updated_at = ?, last_actor = ? WHERE id = ? AND status = ? AND updated_at = ? AND items = ?"+(b.status==="cancelled"?" AND paid = 0":"")).bind(JSON.stringify(updatedItems),b.status,reason,Math.max(Date.now(),Number(old.updated_at)+1),actor,id,old.status,old.updated_at,old.items).run();
     if(changed.meta.changes!==1)throw new OrderError("Đơn vừa được nhân viên khác cập nhật.",409);
    }notifyRealtimeInvalidation(currentStoreId(),"orders");return json({ok:true});
   }
-  if(request.method==="PATCH"&&path==="admin/call"){allow("tables.manage");if(!Number.isInteger(b.createdAt))throw new OrderError("Yêu cầu hỗ trợ không hợp lệ.");const resolved=await db.prepare("UPDATE service_requests SET status = ? WHERE id = ? AND status = ? AND created_at = ?").bind("done",checkedText(b.id,60,true),"open",b.createdAt).run();if(resolved.meta.changes!==1)throw new OrderError("Yêu cầu đã thay đổi. Vui lòng tải lại.",409);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true});}
+  if(request.method==="PATCH"&&path==="admin/call"){allow("tables.manage");if(!Number.isInteger(b.createdAt))throw new OrderError("Yêu cầu hỗ trợ không hợp lệ.");const resolved=await db.prepare("UPDATE service_requests SET status = ?, pending_count = 0 WHERE id = ? AND status = ? AND created_at = ?").bind("done",checkedText(b.id,60,true),"open",b.createdAt).run();if(resolved.meta.changes!==1)throw new OrderError("Yêu cầu đã thay đổi. Vui lòng tải lại.",409);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true});}
   if(request.method==="PATCH"&&path==="admin/promotion"){
    allow("menu.manage");const id=checkedText(b.id,60,true);
    const item=await db.prepare("SELECT price FROM menu_items WHERE id = ?").bind(id).first<{price:number}>();
@@ -344,7 +358,7 @@ async function handleScoped(request:Request){
   if(request.method==="PATCH"&&path==="admin/shop"){
    allow("settings.manage");
    if(typeof b.open!=="boolean")throw new OrderError("Trạng thái nhận món không hợp lệ.");
-   const previous=await getShop();const shop={logo:validateShopLogo(b.logo===undefined?previous.logo:b.logo),name:checkedText(b.name,40,true),tagline:checkedText(b.tagline,60),hours:checkedText(b.hours,50),address:checkedText(b.address,140),open:!!b.open};await saveStoreBranding(shop);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,shop});
+   const previous=await getShop();const shop={logo:b.logo===undefined?previous.logo:validateShopLogo(b.logo,45000),name:checkedText(b.name,40,true),tagline:checkedText(b.tagline,60),hours:checkedText(b.hours,50),address:checkedText(b.address,140),open:!!b.open};await saveStoreBranding(shop);notifyRealtimeInvalidation(currentStoreId(),"board");return json({ok:true,shop});
   }
   if(request.method==="PATCH"&&path==="admin/table"){
    allow("tables.manage");
@@ -465,7 +479,7 @@ async function handle(request:Request){
    return handleScoped(request);
   });
   const tTotal = performance.now();
-  resp.headers.set("Server-Timing", `store;dur=${(tStore - t0).toFixed(1)}, total;dur=${(tTotal - t0).toFixed(1)}`);
+  if((env as Record<string,unknown>).ENABLE_SERVER_TIMING==="true")resp.headers.set("Server-Timing", `store;dur=${(tStore - t0).toFixed(1)}, total;dur=${(tTotal - t0).toFixed(1)}`);
   return resp;
  }
  catch(error){
@@ -477,7 +491,7 @@ async function handle(request:Request){
    console.error(`[API Error ${correlationId}]`, error instanceof Error ? error.message : "Unknown", error instanceof Error ? error.stack : "");
    resp = json({error:"Chưa kết nối được với hệ thống. Vui lòng thử lại.", correlationId},500);
   }
-  resp.headers.set("Server-Timing", `total;dur=${(tTotal - t0).toFixed(1)}`);
+  if((env as Record<string,unknown>).ENABLE_SERVER_TIMING==="true")resp.headers.set("Server-Timing", `total;dur=${(tTotal - t0).toFixed(1)}`);
   return resp;
  }
 }

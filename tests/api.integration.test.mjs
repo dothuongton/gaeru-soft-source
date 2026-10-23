@@ -25,6 +25,7 @@ function loadApp(entry = "route") {
   const paths = {
     route: "app/api/[...path]/route.ts",
     paidInvoicesServer:"lib/paid-invoices-server.ts",
+    serviceReminders:"lib/service-reminders.ts",
     lineTransition:"lib/order-line-transition.ts",
     tableZones:"lib/table-zones.ts",
     tableZonesServer:"lib/table-zones-server.ts",
@@ -65,6 +66,7 @@ function loadApp(entry = "route") {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     const require = (specifier) => {
+      if(specifier.endsWith("/service-reminders"))return load("serviceReminders");
       if(specifier.endsWith("/paid-invoices-server"))return load("paidInvoicesServer");
       if(specifier.endsWith("/order-line-transition"))return load("lineTransition");
       if(specifier.endsWith("/table-zones-server"))return load("tableZonesServer");
@@ -1002,7 +1004,9 @@ test("service and bill calls deduplicate by dining session and kind, and can reo
   assert.equal((await call("PATCH", "admin/call", { id: first.id }, { staff: true })).status, 400);
   assert.equal((await call("PATCH", "admin/call", { id: first.id, createdAt: first.created_at }, { staff: true })).status, 200);
   assert.equal(sqlite.prepare("SELECT status FROM service_requests WHERE id = ?").get(first.id).status, "done");
-  assert.equal((await call("POST", "calls", service)).status, 200);
+  assert.equal((await call("POST", "calls", service)).status, 429);
+  const clock=Date.now;Date.now=()=>first.created_at+30001;
+  try{assert.equal((await call("POST", "calls", service)).status,200);}finally{Date.now=clock;}
   const reopened = sqlite.prepare("SELECT * FROM service_requests WHERE id = ?").get(first.id);
   assert.equal(reopened.status, "open");
   assert.ok(reopened.created_at > first.created_at);
@@ -1062,7 +1066,8 @@ test("admin retains old unresolved orders beyond the archive cap and counts the 
     const created = await call("POST", "orders", checkout());
     assert.equal(created.status, 201);
     const base = sqlite.prepare("SELECT * FROM orders WHERE id = ?").get(created.data.order.id);
-    sqlite.exec("DELETE FROM orders");
+    // Keep the original called order as archived fixture data; called records are append-only.
+    sqlite.prepare("UPDATE orders SET status = 'served',paid = 1,created_at = ?,dining_session_id = NULL WHERE id = ?").run(Date.parse("2026-10-10T00:00:00Z"),base.id);
     const columns = Object.keys(base);
     const insert = sqlite.prepare(`INSERT INTO orders (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`);
     const add = (id, overrides) => {
@@ -2074,7 +2079,8 @@ test("the settlement upgrade preserves old closed visits and explicitly reconstr
   for (const migration of migrations.slice(0, settlementMigration)) sqlite.exec(readFileSync(root + "drizzle/" + migration, "utf8"));
   for (const [tableName, records] of [["dining_tables", initialTables], ["table_sessions", initialSessions], ["orders", initialOrders]]) {
     for (const record of records) {
-      const columns = Object.keys(record).filter(column=>column!=="store_id");
+      const available=new Set(sqlite.prepare(`PRAGMA table_info(${tableName})`).all().map(column=>column.name));
+      const columns = Object.keys(record).filter(column=>available.has(column));
       sqlite.prepare(`INSERT INTO ${tableName} (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`).run(...columns.map((column) => record[column]));
     }
   }
@@ -2638,7 +2644,7 @@ test("a resolved support request can reopen on the new table and an old acknowle
   assert.deepEqual({ ...moved }, { ...old, table_id: target.id, table_name: target.name });
   assert.equal((await call("PATCH", "admin/call", { id: old.id, createdAt: old.created_at }, { staff: true })).status, 200);
   const originalNow = Date.now;
-  Date.now = () => old.created_at;
+  Date.now = () => old.created_at+30001;
   try {
     assert.equal((await call("POST", "calls", serviceCall({ tableToken: target.token }))).status, 200);
   } finally {
@@ -3172,7 +3178,7 @@ const protectedWrites = [
   { name: "advancing an order", path: "admin/order", permission: "orders.manage", body: ({ order }) => ({ id: order.id, status: "preparing" }) },
   { name: "cancelling an order", path: "admin/order", permission: "orders.cancel", body: ({ order }) => ({ id: order.id, status: "cancelled", reason: "Khách đổi ý" }) },
   { name: "collecting a single order", path: "admin/order", permission: "payments.collect", body: ({ order }) => ({ id: order.id, action: "paid", paymentMethod: "cash" }) },
-  { name: "collecting a table balance", path: "admin/table-payment", permission: "payments.collect", body: async () => tablePayment(await tablePaymentQuote()) },
+  { name: "collecting a table balance", path: "admin/table-payment", permission: "payments.collect", body: async () => {sqlite.prepare("UPDATE orders SET status = 'served' WHERE dining_session_id = ?").run(currentSession.id);return tablePayment(await tablePaymentQuote());} },
   { name: "approving a table", path: "admin/session", permission: "tables.manage", body: async () => {
     const pending = await requestTable(freshTable(), guestB, "Khách mới");
     assert.equal(pending.status, 201);
@@ -3268,7 +3274,8 @@ test("support note persists, duplicate does not overwrite, and next request repl
   assert.equal((await call("POST","calls",serviceCall({note:"Khác"}))).status,200);
   assert.equal(read().note,"Thêm bát");assert.equal(read().created_at,first.created_at);
   assert.equal((await call("PATCH","admin/call",{id:first.id,createdAt:first.created_at},{staff:true})).status,200);
-  assert.equal((await call("POST","calls",serviceCall({note:"Thêm nước"}))).status,200);
+  assert.equal((await call("POST","calls",serviceCall({note:"Thêm nước"}))).status,429);
+  const clock=Date.now;Date.now=()=>first.created_at+30001;try{assert.equal((await call("POST","calls",serviceCall({note:"Thêm nước"}))).status,200);}finally{Date.now=clock;}
   assert.equal(read().note,"Thêm nước");assert.ok(read().created_at>first.created_at);
   assert.equal((await call("POST","calls",serviceCall({note:"x".repeat(301)}))).status,400);
 });
@@ -3626,7 +3633,7 @@ test("store branding saves the logo and name atomically, updates registry and st
  assert.equal((await storeCall("alpha","PATCH","admin/shop",update,{identity:a.identity})).status,200);
  const menu=(await storeCall("alpha","GET","menu")).data;assert.equal(menu.shop.name,update.name);assert.match(menu.shop.logo,/^\/api\/branding-icon\?store=alpha&v=/);
  const cachedIcon=await api.GET(new Request(origin+menu.shop.logo));assert.match(cachedIcon.headers.get("cache-control"),/immutable/);assert.equal(Buffer.from(await cachedIcon.arrayBuffer()).toString("base64"),brandPng.split(",")[1]);
- assert.equal((await storeCall("alpha","GET","admin",undefined,{identity:a.identity})).data.shop.logo,brandPng);
+ assert.equal((await storeCall("alpha","GET","admin",undefined,{identity:a.identity})).data.shop.logo,menu.shop.logo);
  const listed=await call("GET","stores",undefined,{staff:true});assert.equal(listed.data.stores.find(s=>s.id==="alpha").name,update.name);
  assert.deepEqual((await storeCall("beta","GET","menu")).data.shop,original);
  const icon=await api.GET(new Request(origin+"/api/branding-icon?store=alpha"));assert.equal(icon.status,200);assert.equal(icon.headers.get("content-type"),"image/png");assert.equal(Buffer.from(await icon.arrayBuffer()).toString("base64"),brandPng.split(",")[1]);
@@ -3935,4 +3942,117 @@ test("concurrent portion updates reject stale items even if their revision times
  pause.release();assert.equal((await stale).status,409);
  const line=JSON.parse(sqlite.prepare('SELECT items FROM orders WHERE id = ?').get(order.id).items)[0];
  assert.equal(line.servedCount,1);assert.equal(line.preparingCount,1);
+});
+
+function billCancelBody(order,count=1,changes={}){return {id:order.id,action:'line_cancel',orderLineId:order.items[0].orderLineId??'line_1',count,reason:'Khách đặt nhầm',requestId:crypto.randomUUID(),expectedUpdatedAt:order.updated_at,...changes};}
+test('a partial dish cancellation removes only unserved portions, retains audit and replays without a second deduction',async()=>{
+ const placed=(await call('POST','orders',checkout())).data.order;
+ const raw=sqlite.prepare('SELECT * FROM orders WHERE id = ?').get(placed.id);
+ const items=JSON.parse(raw.items);items[0]={...items[0],quantity:3,total:items[0].unitPrice*3,newCount:0,preparingCount:1,readyCount:1,servedCount:1};
+ sqlite.prepare("UPDATE orders SET items = ?,total = ?,status = 'preparing' WHERE id = ?").run(JSON.stringify(items),items.reduce((sum,item)=>sum+item.total,0),placed.id);
+ const order=(await call('GET',historyPath())).data.orders[0],body=billCancelBody(order,1);
+ assert.equal((await call('PATCH','admin/order',body,{staff:true})).status,200);
+ const read=()=>sqlite.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);const after=read(),line=JSON.parse(after.items)[0];
+ assert.equal(line.quantity,2);assert.equal(line.servedCount,1);assert.equal(line.preparingCount+line.readyCount,1);assert.equal(line.cancellations[0].reason,'Khách đặt nhầm');assert.equal(after.total,order.total-line.unitPrice);
+ assert.equal((await call('PATCH','admin/order',body,{staff:true})).data.replayed,true);assert.deepEqual(read(),after);
+ assert.equal((await call('PATCH','admin/order',{...body,count:2},{staff:true})).status,409);
+ const fresh=(await call('GET',historyPath())).data.orders[0];assert.equal((await call('PATCH','admin/order',billCancelBody(fresh,2),{staff:true})).status,409);
+});
+test('cancelling the last unserved dish removes its entire call from the bill and preserves cancelled value',async()=>{
+ const order=(await call('POST','orders',checkout({items:[{itemId:'coffee',quantity:1,extras:[],taste:'Vừa vị',note:''}],expectedTotal:35000}))).data.order;
+ assert.ok(order);
+ assert.equal((await call('PATCH','admin/order',billCancelBody(order),{staff:true})).status,200);
+ const saved=sqlite.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);assert.equal(saved.status,'cancelled');assert.equal(saved.total,35000);assert.equal(JSON.parse(saved.items)[0].quantity,0);
+ assert.equal((await tablePaymentQuote()).total,0);
+});
+test('dish cancellation needs orders.cancel and cannot alter paid portions or a stale line snapshot',async()=>{
+ const order=(await call('POST','orders',checkout())).data.order;const body=billCancelBody(order);
+ const staff=await grantStaff(['orders.manage']);assert.equal((await call('PATCH','admin/order',body,{identity:staff.identity})).status,403);
+ assert.equal((await call('PATCH','admin/order',{id:order.id,status:'preparing'},{staff:true})).status,200);
+ assert.equal((await call('PATCH','admin/order',body,{staff:true})).status,409);
+ assert.equal((await call('PATCH','admin/order',{id:order.id,action:'paid'},{staff:true})).status,200);
+ const fresh=(await call('GET',historyPath())).data.orders[0];assert.equal((await call('PATCH','admin/order',billCancelBody(fresh),{staff:true})).status,409);
+});
+test('a dish cancellation racing with served portions does not erase the service update', {timeout:5000},async()=>{
+ const order=(await call('POST','orders',checkout())).data.order;
+ const pause=pauseNextWrite(sql=>/UPDATE\s+orders\s+SET\s+items\s*=.*total\s*=/is.test(sql));
+ const pending=call('PATCH','admin/order',billCancelBody(order),{staff:true});
+ try{await pause.reached;for(const status of ['preparing','ready','served'])assert.equal((await call('PATCH','admin/order',{id:order.id,status},{staff:true})).status,200);}finally{pause.release();beforeWrite=null;}
+ assert.equal((await pending).status,409);assert.equal(sqlite.prepare('SELECT status FROM orders WHERE id = ?').get(order.id).status,'served');
+});
+test('table collection rejects unserved calls including earlier paid calls and accepts legacy served visits',async()=>{
+ const order=insertRevenueOrder(table,{status:'ready'}),body=tablePayment(await tablePaymentQuote());
+ assert.equal((await collectTable(body)).status,409);assert.equal(rowCount('table_payment_receipts'),0);
+ sqlite.prepare("UPDATE orders SET paid = 1 WHERE id = ?").run(order.id);insertRevenueOrder(table,{status:'served'});
+ assert.equal((await collectTable(tablePayment(await tablePaymentQuote()))).status,409);
+ sqlite.prepare("UPDATE orders SET status = 'served' WHERE id = ?").run(order.id);
+ assert.equal((await collectTable(tablePayment(await tablePaymentQuote()))).status,200);
+ // Old persisted visit identifiers and the previous query spelling remain readable.
+ sqlite.prepare('UPDATE table_sessions SET id = ? WHERE id = ?').run('legacy-03',currentSession.id);
+ sqlite.prepare('UPDATE orders SET dining_session_id = ? WHERE dining_session_id = ?').run('legacy-03',currentSession.id);
+ const legacy=await call('GET','admin/table-payment?sessionId=legacy-03',undefined,{staff:true});assert.equal(legacy.status,200);assert.equal(legacy.data.session.id,'legacy-03');
+});
+test('reminders increment accepted counts after cooldown, are idempotent and preserve newer requests from stale resolution',async()=>{
+ const originalNow=Date.now;let now=originalNow();Date.now=()=>now;
+ try{
+  const request={...serviceCall(),requestId:crypto.randomUUID()};const first=await call('POST','calls',request);assert.equal(first.status,200);assert.equal(first.data.requestCount,1);
+  assert.equal((await call('POST','calls',request)).data.replayed,true);
+  assert.equal((await call('POST','calls',{...request,requestId:crypto.randomUUID()})).status,429);
+  const old=sqlite.prepare("SELECT * FROM service_requests WHERE kind = 'service'").get();
+  now+=30001;const next={...request,requestId:crypto.randomUUID(),note:'Nhắc lại: thêm nước'};const second=await call('POST','calls',next);assert.equal(second.status,200);assert.equal(second.data.requestCount,2);assert.equal(second.data.pendingCount,2);
+  assert.equal((await call('PATCH','admin/call',{id:old.id,createdAt:old.created_at},{staff:true})).status,409);
+  const current=sqlite.prepare('SELECT * FROM service_requests WHERE id = ?').get(old.id);assert.equal((await call('PATCH','admin/call',{id:old.id,createdAt:current.created_at},{staff:true})).status,200);
+  now+=30001;const third=await call('POST','calls',{...request,requestId:crypto.randomUUID()});assert.equal(third.data.requestCount,3);assert.equal(third.data.pendingCount,1);
+  assert.equal((await call('POST','calls',request)).data.replayed,true);assert.equal(sqlite.prepare('SELECT request_count FROM service_requests WHERE id = ?').get(old.id).request_count,3);
+  assert.equal((await call('POST','calls',{...request,note:'Changed replay'})).status,409);
+ }finally{Date.now=originalNow;}
+});
+test('payment reminders have independent counters and a simultaneous repeat creates only one alert',async()=>{
+ const first={...serviceCall({kind:'bill'}),requestId:crypto.randomUUID()};const second={...first,requestId:crypto.randomUUID()};
+ const replies=await Promise.all([call('POST','calls',first),call('POST','calls',second)]);assert.deepEqual(replies.map(value=>value.status).sort(),[200,429]);
+ const bill=sqlite.prepare("SELECT * FROM service_requests WHERE kind = 'bill'").get();assert.equal(bill.request_count,1);
+ assert.equal((await call('POST','calls',{...serviceCall(),requestId:crypto.randomUUID()})).status,200);
+ assert.equal((await call('GET','menu?table='+table.token)).data.callSummary.length,2);
+});
+
+test('bill history retains the original called quantity, actor and cancelled portions and cannot be deleted',async()=>{
+ const order=(await call('POST','orders',checkout())).data.order;assert.equal((await call('PATCH','admin/order',billCancelBody(order),{staff:true})).status,200);
+ const response=await call('GET','admin/bill-history?session='+currentSession.id,undefined,{staff:true});assert.equal(response.status,200);assertNoSecrets(response.data);
+ const history=response.data.history;assert.equal(history[0].kind,'created');assert.equal(history[0].after.items[0].quantity,order.items[0].quantity);
+ const cancelled=history.at(-1);assert.equal(cancelled.kind,'cancel');assert.ok(cancelled.actor.includes('·'));assert.equal(cancelled.before.total,order.total);assert.equal(cancelled.after.items[0].cancellations[0].quantity,1);
+ assert.throws(()=>sqlite.prepare('DELETE FROM order_audit WHERE order_id = ?').run(order.id),/cannot be deleted/);
+ assert.throws(()=>sqlite.prepare("UPDATE order_audit SET actor = 'Other' WHERE order_id = ?").run(order.id),/cannot be changed/);
+ assert.throws(()=>sqlite.prepare('DELETE FROM orders WHERE id = ?').run(order.id),/cannot be deleted/);
+ assert.equal((await call('GET','admin/bill-history?session='+currentSession.id)).status,403);
+});
+test('paid invoice snapshot includes cancelled calls and remains unchanged after later live data changes',async()=>{
+ const cancelled=(await call('POST','orders',checkout())).data.order;assert.equal((await call('PATCH','admin/order',billCancelBody(cancelled),{staff:true})).status,200);
+ insertRevenueOrder(table,{status:'served',total:70000});
+ const collected=await collectTable(tablePayment(await tablePaymentQuote()));assert.equal(collected.status,200,JSON.stringify(collected.data));
+ const receipt=sqlite.prepare('SELECT * FROM table_payment_receipts').get();assert.ok(receipt.orders_json);
+ const url='admin/invoices/'+encodeURIComponent('payment:'+receipt.id);const first=(await call('GET',url,undefined,{staff:true})).data;
+ assert.equal(first.snapshot,true);assert.ok(first.history.some(event=>event.kind==='cancel'));assert.ok(first.orders.some(order=>order.id===cancelled.id&&order.status==='cancelled'));
+ assertNoSecrets(first);const paid=first.orders.find(order=>order.status==='served');assert.equal(paid.paid,1);
+ sqlite.prepare("UPDATE orders SET note = 'Changed live record' WHERE id = ?").run(paid.id);
+ assert.deepEqual((await call('GET',url,undefined,{staff:true})).data,first);
+ const moved=await transferTable(tableTransfer(freshTable()));assert.equal(moved.status,200);
+ assert.deepEqual((await call('GET',url,undefined,{staff:true})).data,first,'A later table transfer must not rename the paid invoice');
+ assert.throws(()=>sqlite.prepare("UPDATE table_payment_receipts SET orders_json = '[]' WHERE id = ?").run(receipt.id),/cannot be changed/);
+ assert.throws(()=>sqlite.prepare('DELETE FROM table_payment_receipts WHERE id = ?').run(receipt.id),/cannot be deleted/);
+});
+test('a missing audit write rolls back a cancellation rather than changing the bill without history',async()=>{
+ const order=(await call('POST','orders',checkout())).data.order;
+ sqlite.exec("CREATE TRIGGER fail_cancel_audit BEFORE INSERT ON order_audit WHEN NEW.kind = 'cancel' BEGIN SELECT RAISE(ABORT,'audit unavailable'); END");
+ const before=sqlite.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);const response=await call('PATCH','admin/order',billCancelBody(order),{staff:true});assert.equal(response.status,500);assert.deepEqual(sqlite.prepare('SELECT * FROM orders WHERE id = ?').get(order.id),before);
+});
+
+test('full and compact admin use a versioned logo URL and never repeat the stored image payload',async()=>{
+ const raw=JSON.parse(sqlite.prepare("SELECT value FROM settings WHERE key = 'shop'").get().value);raw.logo=brandPng;sqlite.prepare("UPDATE settings SET value = ? WHERE key = 'shop'").run(JSON.stringify(raw));
+ for(const path of ['admin','admin?section=board']){const response=await call('GET',path,undefined,{staff:true});assert.equal(response.status,200);assert.match(response.data.shop.logo,/^\/api\/branding-icon\?/);assert.ok(!JSON.stringify(response.data).includes('data:image/png;base64,'));}
+ const bytes=Buffer.concat([Buffer.from(brandPng.split(',')[1],'base64'),Buffer.alloc(45000)]);const rejected=await call('PATCH','admin/shop',{...initialMenu.shop,logo:'data:image/png;base64,'+bytes.toString('base64')},{staff:true});assert.equal(rejected.status,400);assert.match(rejected.data.error,/45 KB/);
+});
+test('server timing is opt-in and realtime sockets require the same origin',async()=>{
+ delete environment.ENABLE_SERVER_TIMING;assert.equal((await call('GET','admin',undefined,{staff:true})).headers.get('server-timing'),null);
+ environment.ENABLE_SERVER_TIMING='true';try{assert.match((await call('GET','admin',undefined,{staff:true})).headers.get('server-timing'),/total;dur=/);}finally{delete environment.ENABLE_SERVER_TIMING;}
+ assert.equal((await call('GET','realtime/ws',undefined,{staff:true,headers:{Origin:'https://foreign.example'}})).status,403);
 });
