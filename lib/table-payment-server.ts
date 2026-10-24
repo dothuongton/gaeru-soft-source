@@ -17,14 +17,14 @@ export async function getTablePaymentQuote(params:URLSearchParams):Promise<Table
  const db=database();
  if(!rawSession?.trim()&&rawTable?.trim()){
   const tableId=checkedText(rawTable,64,true);
-  const active=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
+  const active=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status IN ('active','pending') ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
   if(active?.id) rawSession=active.id;
   else {
    const withUnpaid=await db.prepare("SELECT s.id FROM table_sessions s WHERE s.table_id = ? AND EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') ORDER BY s.updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
    if(withUnpaid?.id) rawSession=withUnpaid.id;
    else {
     await ensureLegacySessions(tableId);
-    const repaired=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
+    const repaired=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status IN ('active','pending') ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
     if(repaired?.id) rawSession=repaired.id;
    }
   }
@@ -43,7 +43,25 @@ export async function getTablePaymentQuote(params:URLSearchParams):Promise<Table
   db.prepare("SELECT * FROM orders WHERE dining_session_id = ? AND paid = 0 AND status != 'cancelled' ORDER BY created_at ASC,id ASC").bind(sessionId)
  ]);
  const session=result[0].results[0] as Record<string,unknown>|undefined;
- if(!session)throw new OrderError("Không tìm thấy lượt phục vụ của bàn.",404);
+ if(!session){
+  let fallbackTableId = rawTable?.trim() ? checkedText(rawTable,64,true) : null;
+  if(!fallbackTableId){
+   const orderWithTable = await db.prepare("SELECT table_id FROM orders WHERE dining_session_id = ? LIMIT 1").bind(sessionId).first<{table_id:string}>();
+   if(orderWithTable?.table_id) fallbackTableId = orderWithTable.table_id;
+  }
+  if(fallbackTableId){
+   const active = await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status IN ('active','pending') ORDER BY updated_at DESC LIMIT 1").bind(fallbackTableId).first<{id:string}>();
+   if(active?.id){
+    return getTablePaymentQuote(new URLSearchParams({session: active.id}));
+   }
+   await ensureLegacySessions(fallbackTableId);
+   const repaired = await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status IN ('active','pending') ORDER BY updated_at DESC LIMIT 1").bind(fallbackTableId).first<{id:string}>();
+   if(repaired?.id){
+    return getTablePaymentQuote(new URLSearchParams({session: repaired.id}));
+   }
+  }
+  throw new OrderError("Không tìm thấy lượt phục vụ của bàn.",404);
+ }
  if(session.status!=="active")throw new OrderError("Bàn chưa mở hoặc lượt phục vụ đã kết thúc. Vui lòng tải lại trang.",409);
  const totals=result[1].results[0] as Pick<TablePaymentQuote,"total"|"paidTotal"|"unpaidTotal"|"unpaidCount"|"unservedCount">|undefined;
  if(!totals)throw new OrderError("Chưa lấy được số tiền của bàn. Vui lòng thử lại.",503);
@@ -70,6 +88,8 @@ export async function payTableBalance(body:Record<string,unknown>,actor="Nhân v
  const normalized=JSON.stringify({sessionId,orderIds,expectedTotal:amount,paymentMethod});
  const requestHash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(normalized))),byte=>byte.toString(16).padStart(2,"0")).join("");
  const db=database(),attemptId=crypto.randomUUID(),paidAt=Date.now();
+ const allowUnserved=Boolean(body.allowUnserved);
+ const unservedPredicate=allowUnserved?"":"AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.status NOT IN ('cancelled','served'))";
  let result;
  try {
   result=await db.batch([
@@ -81,7 +101,7 @@ export async function payTableBalance(body:Record<string,unknown>,actor="Nhân v
      (SELECT json_group_array(json_object('id',a.id,'kind',a.kind,'actor',a.actor,'at',a.at,'before',json(a.before_json),'after',json(a.after_json))) FROM order_audit a WHERE a.session_id = s.id)
     FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id
     WHERE s.id = ? AND s.status = 'active'
-     AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.status NOT IN ('cancelled','served'))
+     ${unservedPredicate}
      AND (SELECT COUNT(*) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
      AND (SELECT COALESCE(SUM(o.total),0) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
      AND NOT EXISTS (
@@ -108,7 +128,7 @@ export async function payTableBalance(body:Record<string,unknown>,actor="Nhân v
     SELECT ?,?,?,s.id,s.table_id,COALESCE(t.name,s.table_name),s.customer_name,?,?,?,?,?
     FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id
     WHERE s.id = ? AND s.status = 'active'
-     AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.status NOT IN ('cancelled','served'))
+     ${unservedPredicate}
      AND (SELECT COUNT(*) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
      AND (SELECT COALESCE(SUM(o.total),0) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
      AND NOT EXISTS (
@@ -130,8 +150,10 @@ export async function payTableBalance(body:Record<string,unknown>,actor="Nhân v
  }
  const receipt=result[2].results[0] as ReceiptRow|undefined;
  if(!receipt){
-  const pending=await db.prepare("SELECT COUNT(*) AS count FROM orders WHERE dining_session_id = ? AND status NOT IN ('cancelled','served')").bind(sessionId).first<{count:number}>();
-  if(pending?.count)throw new OrderError("Bàn còn món chưa phục vụ. Hãy phục vụ hoặc hủy món đặt nhầm trước khi thanh toán.",409);
+  if(!allowUnserved){
+   const pending=await db.prepare("SELECT COUNT(*) AS count FROM orders WHERE dining_session_id = ? AND status NOT IN ('cancelled','served')").bind(sessionId).first<{count:number}>();
+   if(pending?.count)throw new OrderError("Bàn còn món chưa phục vụ. Hãy phục vụ hoặc hủy món đặt nhầm trước khi thanh toán.",409);
+  }
   throw new OrderError(changedMessage,409);
  }
  if(receipt.request_hash!==requestHash)throw new OrderError("Mã xác nhận đã dùng cho nội dung thanh toán khác. Vui lòng tải lại và xác nhận lại số tiền.",409);

@@ -7,12 +7,12 @@ import type {PaymentMethod} from './revenue-types';
 // Every table-payment receipt represents one actual collection, not one order.
 // Legacy individually paid orders remain visible without duplicating receipts.
 const source=`
- SELECT 'payment:'||r.id AS id,COALESCE(json_extract(r.orders_json,'$[0].table_id'),r.table_id) AS tableId,COALESCE(json_extract(r.orders_json,'$[0].table_name'),r.table_name) AS tableName,COALESCE(json_extract(r.orders_json,'$[0].customer_name'),r.customer_name) AS customerName,r.paid_at AS paidAt,r.amount AS amount,r.payment_method AS method,r.order_count AS orderCount,'table' AS source
+ SELECT 'payment:'||r.id AS id,COALESCE(CASE WHEN json_valid(r.orders_json) THEN json_extract(r.orders_json,'$[0].table_id') ELSE NULL END,r.table_id) AS tableId,COALESCE(CASE WHEN json_valid(r.orders_json) THEN json_extract(r.orders_json,'$[0].table_name') ELSE NULL END,r.table_name) AS tableName,COALESCE(CASE WHEN json_valid(r.orders_json) THEN json_extract(r.orders_json,'$[0].customer_name') ELSE NULL END,r.customer_name) AS customerName,r.paid_at AS paidAt,r.amount AS amount,r.payment_method AS method,r.order_count AS orderCount,'table' AS source
  FROM table_payment_receipts r
  UNION ALL
  SELECT 'order:'||o.id AS id,o.table_id AS tableId,o.table_name AS tableName,o.customer_name AS customerName,o.paid_at AS paidAt,o.total AS amount,COALESCE(o.payment_method,'unknown') AS method,1 AS orderCount,'legacy' AS source
  FROM orders o WHERE o.paid = 1 AND o.status != 'cancelled' AND o.paid_at IS NOT NULL
- AND NOT EXISTS(SELECT 1 FROM table_payment_receipts r,json_each(r.order_ids_json) ids WHERE ids.value = o.id)
+ AND NOT EXISTS(SELECT 1 FROM table_payment_receipts r WHERE json_valid(r.order_ids_json) AND EXISTS(SELECT 1 FROM json_each(r.order_ids_json) ids WHERE ids.value = o.id))
 `;
 function invoice(row:Record<string,unknown>):PaidInvoice{
  const method=['cash','bank','other','unknown'].includes(row.method as string)?row.method as PaymentMethod:'unknown';
@@ -63,7 +63,7 @@ export async function paidInvoiceDetail(id:string):Promise<PaidInvoiceDetail>{
   } catch {}
  }
  const orders=id.startsWith('payment:')?
-  await db.prepare('SELECT * FROM orders WHERE id IN (SELECT value FROM table_payment_receipts r,json_each(r.order_ids_json) WHERE r.id = ?) ORDER BY created_at,id').bind(id.slice(8)).all<Record<string,unknown>>():
+  await db.prepare('SELECT * FROM orders WHERE id IN (SELECT value FROM table_payment_receipts r,json_each(CASE WHEN json_valid(r.order_ids_json) THEN r.order_ids_json ELSE \'[]\' END) WHERE r.id = ?) ORDER BY created_at,id').bind(id.slice(8)).all<Record<string,unknown>>():
   await db.prepare('SELECT * FROM orders WHERE id = ? AND paid = 1 AND status != ?').bind(id.slice(6),'cancelled').all<Record<string,unknown>>();
  return {invoice:invoice(row),orders:orders.results.map(publicOrder),snapshot:false};
 }

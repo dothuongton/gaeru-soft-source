@@ -159,6 +159,25 @@ export async function seed(){
     stmts.push(db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("seeded-v1", "1"));
     await db.batch(stmts);
    }
+   if (storeId === "ola") {
+    const existingOla = await db.prepare("SELECT value FROM settings WHERE key = ?").bind("seeded-ola-v5").first();
+    if (!existingOla) {
+     try {
+      await db.prepare("DELETE FROM menu_items WHERE id IN ('1','2','3','4','5','6','7')").run();
+     } catch {}
+     const olaStmts: any[] = [];
+     for (const m of olaMenuItems) {
+      olaStmts.push(db.prepare("INSERT OR REPLACE INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?)").bind(m.id, m.name, m.description, m.category, m.price, m.image, m.badge, m.available, m.sort));
+     }
+     olaStmts.push(db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)").bind("shop", JSON.stringify(defaultOlaShop)));
+     olaStmts.push(db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)").bind("categories", JSON.stringify(defaultOlaCategories)));
+     olaStmts.push(db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)").bind("banner", JSON.stringify(defaultOlaBanner)));
+     olaStmts.push(db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)").bind("seeded-ola-v5", "1"));
+     for (let i = 0; i < olaStmts.length; i += 30) {
+      await db.batch(olaStmts.slice(i, i + 30));
+     }
+    }
+   }
    seeded.add(storeId);
   })().finally(() => {
    inFlightMap.delete(storeId);
