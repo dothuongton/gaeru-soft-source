@@ -669,8 +669,9 @@ export default function AdminPanel({
                 onCollect={openPayment}
                 onCancelLine={(order,orderLineId,count,reason,requestId)=>mutate("order",{id:order.id,action:"line_cancel",orderLineId,count,reason,requestId,expectedUpdatedAt:order.updated_at},"Đã hủy phần chưa phục vụ và cập nhật bill.",`order:${order.id}`)}
                 onCollectTable={(sessionId, tableId) => {
-                  setTablePaymentSessionId(sessionId);
-                  setTablePaymentTableId(tableId ?? null);
+                  const effectiveTableId = tableId || (sessionId?.startsWith("orphan-") ? sessionId.slice(7) : null);
+                  setTablePaymentSessionId(sessionId || null);
+                  setTablePaymentTableId(effectiveTableId);
                 }}
                 onCancel={order => {
                   setCancelOrder(order);

@@ -3998,6 +3998,27 @@ test('table collection rejects unserved calls including earlier paid calls and a
  sqlite.prepare('UPDATE orders SET dining_session_id = ? WHERE dining_session_id = ?').run('legacy-03',currentSession.id);
  const legacy=await call('GET','admin/table-payment?sessionId=legacy-03',undefined,{staff:true});assert.equal(legacy.status,200);assert.equal(legacy.data.session.id,'legacy-03');
 });
+
+test('table payment quote resolves by tableId, orphan session, table name or fallback when session is missing', async () => {
+ const target = freshTable();
+ const orphan = insertOrphanOrder(target, { status: "served", paid: 0 });
+ const byTableId = await call('GET', 'admin/table-payment?tableId=' + target.id, undefined, { staff: true });
+ assert.equal(byTableId.status, 200);
+ assert.equal(byTableId.data.unpaidCount, 1);
+ assert.equal(byTableId.data.orders[0].id, orphan.id);
+
+ const byOrphan = await call('GET', 'admin/table-payment?session=orphan-' + target.id, undefined, { staff: true });
+ assert.equal(byOrphan.status, 200);
+ assert.equal(byOrphan.data.unpaidCount, 1);
+
+ const byTableName = await call('GET', 'admin/table-payment?table=' + encodeURIComponent(target.name), undefined, { staff: true });
+ assert.equal(byTableName.status, 200);
+ assert.equal(byTableName.data.unpaidCount, 1);
+
+ const byTableAsSession = await call('GET', 'admin/table-payment?session=' + target.id, undefined, { staff: true });
+ assert.equal(byTableAsSession.status, 200);
+ assert.equal(byTableAsSession.data.unpaidCount, 1);
+});
 test('reminders increment accepted counts after cooldown, are idempotent and preserve newer requests from stale resolution',async()=>{
  const originalNow=Date.now;let now=originalNow();Date.now=()=>now;
  try{

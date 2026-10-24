@@ -77,8 +77,11 @@ export function TablePaymentDialog({
     void (async () => {
       try {
         const query = new URLSearchParams();
-        if (sessionId) query.set("session", sessionId);
+        if (sessionId && !sessionId.startsWith("orphan-")) query.set("session", sessionId);
         if (tableId) query.set("tableId", tableId);
+        if (sessionId && sessionId.startsWith("orphan-") && !tableId) {
+          query.set("tableId", sessionId.slice(7));
+        }
         const response = await fetch(withStore("/api/admin/table-payment?" + query.toString(),storeId), {credentials: "same-origin", cache: "no-store", signal: controller.signal});
         const data = await response.json().catch(() => null) as (Partial<TablePaymentQuote> & {error?: string}) | null;
         if (!response.ok || !data) throw new Error(data?.error || "Chưa tải được số tiền của bàn. Vui lòng thử lại.");
