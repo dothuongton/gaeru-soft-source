@@ -23,13 +23,16 @@ import type {Category,MenuItem,Promotion,DiningTable,Shop,CartLine,Order,OrderSt
 import "./interface-theme.css";
 import "./responsive-enhancements.css";
 import "./customer-order-flow.css";
+import "./customer-redesign.css";
+import type {StoreCategory} from "@/lib/categories-server";
+import type {StoreBannerConfig} from "@/lib/banner-server";
 import {AdminStartup} from "./admin-workspace";
 
 const AdminPanel = lazy(() => import("./admin-panel"));
 
 type View="menu"|"orders"|"about"|"admin";
 type CallSummary={kind:"service"|"bill";requestCount:number;nextAllowedAt:number};
-type MenuResponse={callSummary?:CallSummary[];items:MenuItem[];shop:Shop;table:DiningTable;isStaff:boolean;access:StaffAccess;preview:boolean;connection:Connection;displaySettings:DisplaySettings;themeSettings:ThemeSettings};
+type MenuResponse={callSummary?:CallSummary[];items:MenuItem[];shop:Shop;table:DiningTable;isStaff:boolean;access:StaffAccess;preview:boolean;connection:Connection;displaySettings:DisplaySettings;themeSettings:ThemeSettings;categories?:StoreCategory[];banner?:StoreBannerConfig};
 export type AdminData={realtimeEnabled?:boolean;zoneSettings?:import("@/lib/table-zones").TableZones;compact?:boolean;access:StaffAccess;items:MenuItem[];shop:Shop;tables:DiningTable[];orders:Order[];calls:ServiceRequest[];sessions:TableSession[];transfers:TableTransfer[];displaySettings:DisplaySettings;themeSettings:ThemeSettings;stats:{todayCount:number|null;todayCollected:number|null}};
 const catIcons={all:Grid2X2,main:Soup,light:Salad,drink:Coffee,dessert:CakeSlice};
 
@@ -80,6 +83,15 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
  const [callSummary,setCallSummary]=useState<CallSummary[]>([]),[callClock,setCallClock]=useState(0);
  const callLock=useRef(false),callAttempt=useRef<{id:string;sessionId:string;kind:"service"|"bill";note:string}|null>(null);
  useEffect(()=>{if(!helpOpen)return;setCallClock(Date.now());const timer=setInterval(()=>setCallClock(Date.now()),1000);return()=>clearInterval(timer);},[helpOpen]);
+ const [dynamicCategories,setDynamicCategories]=useState<StoreCategory[]>([]);
+ const [bannerConfig,setBannerConfig]=useState<StoreBannerConfig|null>(null);
+ const [currentSlide,setCurrentSlide]=useState(0);
+ const [searchOpen,setSearchOpen]=useState(false);
+ useEffect(()=>{
+  if(!bannerConfig?.enabled||bannerConfig.mode!=="slide"||(bannerConfig.items?.length??0)<=1)return;
+  const timer=setInterval(()=>{setCurrentSlide(c=>(c+1)%bannerConfig.items.length);},4500);
+  return()=>clearInterval(timer);
+ },[bannerConfig]);
  const [connection,setConnection]=useState<Connection>({state:"preview"}),[draftKey,setDraftKey]=useState("");
  const [itemAction,setItemAction]=useState<OrderAction>("cart"),[submissionError,setSubmissionError]=useState(""),[helpError,setHelpError]=useState("");
  const [itemDraft,setItemDraft]=useState<CartLine|null>(null),[failedSubmission,setFailedSubmission]=useState<PendingOrder|null>(null);
@@ -117,7 +129,7 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
    // A menu read issued before an admin save must not revert its confirmed settings.
    if(settingsAtStart===configurationEpoch.current){applyDisplaySettings(d.displaySettings);applyThemeSettings(d.themeSettings);}
    if(accessAtStart===accessEpoch.current)applyAccess(d.access);
-   if(settingsAtStart===configurationEpoch.current)setShop(d.shop);setItems(d.items);setTable(d.table);connectionRef.current=d.connection;setConnection(d.connection);setCallSummary(d.callSummary??[]);
+   if(settingsAtStart===configurationEpoch.current){setShop(d.shop);if(d.categories)setDynamicCategories(d.categories);if(d.banner)setBannerConfig(d.banner);}setItems(d.items);setTable(d.table);connectionRef.current=d.connection;setConnection(d.connection);setCallSummary(d.callSummary??[]);
   }
   return d;
  },[notify,applyDisplaySettings,applyThemeSettings,applyAccess]);
@@ -298,29 +310,183 @@ export default function OrderingApp({initialShop=defaultShop,initialView="menu"}
   catch(e){if(sameVisit()){if(e instanceof ApiError&&!e.uncertain)callAttempt.current=null;setHelpError((e as Error).message);if(!helpOpen)notify((e as Error).message);void loadMenu().catch(()=>{});}}
   finally{callLock.current=false;setCallBusy(false);}
  }
+ const activeCategories: { id: string; name: string; short: string; sort?: number }[] = dynamicCategories.length > 0 ? dynamicCategories : categories;
  const filtered=items.filter(m=>(category==="all"||category===m.category)&&cleanSearch(m.name+" "+m.description).includes(cleanSearch(query))).sort((a,b)=>sort==="low"?salePrice(a)-salePrice(b):sort==="high"?salePrice(b)-salePrice(a):a.sort-b.sort);
  const activeOrders=orders.filter(o=>o.status!=="served"&&o.status!=="cancelled").length;
  const cartPending=pendingOrder?.source==="cart"&&pendingOrder.requestId===requestId?pendingOrder:null;
  const cartProps={cart,items,total:cartPending?.expectedTotal??total,count,table,adjust,busy,locked:!!pendingOrder,previewItems:cartPending?.previewItems,submit:()=>{if(pendingOrder){setCartOpen(false);setSelected(null);setPendingOpen(true);}else void submit();},note,setNote:(v:string)=>{if(submitLock.current||pendingOrderRef.current)return;setSubmissionError("");setNote(v);setRequestId(crypto.randomUUID());},disabled:!canOrder||(!pendingOrder&&(invalidCart||!shop.open)),connectionRequired:!canOrder,error:submissionError};
  return <div ref={customerShell} className="app-shell" data-view={view} data-preview={connection.state==="preview"} data-cart-visible={count>0&&view==="menu"}>
-  {view!=="admin"&&<><div className="demo-strip"><span><Leaf size={12}/> Một góc nhỏ, một bữa ngon</span><span>Gọi món tại bàn</span></div>
-  <header className="site-header"><button className="brand-button" onClick={()=>navigate("menu")} aria-label="Về thực đơn"><Brand shop={shop}/></button><nav className="top-nav" aria-label="Điều hướng chính"><button className={view==="menu"?"active":""} onClick={()=>navigate("menu")}>Thực đơn</button><button className={view==="orders"?"active":""} onClick={()=>navigate("orders")}>Đơn của bạn {activeOrders>0&&<b>{activeOrders}</b>}</button><button className={view==="about"?"active":""} onClick={()=>navigate("about")}>Về {shop.name}</button></nav><div className="header-actions"><span className="table-pill"><QrCode size={17}/>{connection.state==="preview"?"Thực đơn":table?.name||"Đang kết nối"}</span><button className="call-top" onClick={()=>setHelpOpen(true)} disabled={!canOrder}><Bell size={18}/><span>Gọi nhân viên</span></button></div></header></>}
+  {view!=="admin"&&(
+    <header className="customer-header">
+      <button className="customer-brand" onClick={()=>navigate("menu")} aria-label={"Về thực đơn "+shop.name}>
+        <span className="customer-brand-logo">
+          {shop.logo ? <img src={shop.logo} alt=""/> : shopInitials(shop.name)}
+        </span>
+        <span>{shop.name}</span>
+      </button>
+      <button
+        type="button"
+        className="customer-search-toggle"
+        onClick={() => {
+          setSearchOpen(prev => !prev);
+          const el = document.getElementById("category-search-input");
+          if (el) { el.focus(); el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+        }}
+        aria-label="Tìm kiếm món"
+      >
+        <Search size={20} />
+      </button>
+    </header>
+  )}
   {loadError?<main className="connection-error"><AlertCircle size={38}/><h1>Chưa mở được thực đơn</h1><p>{loadError}</p><button className="primary" onClick={()=>window.location.reload()}><RefreshCw size={17}/>Thử lại</button></main>:view==="admin"?<Suspense fallback={<AdminStartup/>}><AdminPanel initialDashboard={initialDashboard.current} staff={staff} access={access} onAccessChange={applyAccess} ready={ready} notify={notify} onMenuRefresh={loadMenu} shop={shop} onShopChange={applyShop} displaySettings={displaySettings} onDisplaySettings={applyDisplaySettings} themeSettings={themeSettings} onThemeSettings={applyThemeSettings}/></Suspense>:<>
   <div className="store-ribbon"><span className={"status-dot "+(!shop.open?"off":"")}/><strong>{shop.open?"Đang nhận món":"Tạm ngừng nhận món"}</strong><span className="ribbon-divider"/><Clock size={13}/><span>{shop.hours}</span><span className="ribbon-right"><MapPin size={13}/>{connection.state==="preview"?"Mời bạn ghé "+shop.name:table?.zone||"Phục vụ tại bàn"}</span></div>
   {ready&&table&&<TableConnectionPanel connection={connection} table={table} onRequest={requestTable} onRefresh={loadMenu}/>}
   {pendingOrder&&!busy&&<section className="pending-order-banner" role="status"><div><strong>Cần kiểm tra lần gửi món trước</strong><p>Chưa nhận được xác nhận. Giữ nguyên các món để kiểm tra và tránh gọi lặp.</p></div><button className="secondary" onClick={()=>{setSelected(null);setCartOpen(false);setPendingOpen(true);}}><RefreshCw size={17}/>Kiểm tra đơn</button></section>}
   {view==="menu"?<div className="ordering-layout">
-   <aside className="category-sidebar"><p className="eyebrow">THỰC ĐƠN</p><nav aria-label="Nhóm món">{categories.map(c=>{const Icon=catIcons[c.id];return <button key={c.id} onClick={()=>setCategory(c.id)} className={category===c.id?"selected":""}><Icon size={19}/><span>{c.name}</span><small>{items.filter(i=>c.id==="all"||i.category===c.id).length}</small></button>;})}</nav><div className="sidebar-note"><span className="leaf-orbit"><Leaf size={25}/></span><h3>Chậm một chút.<br/>Ngon một chút.</h3><p>Chọn món bạn thích,<br/>{shop.name} lo phần còn lại.</p><span className="tiny-rule"/></div><button className="sidebar-orders" onClick={()=>navigate("orders")}><ReceiptText size={17}/>Đơn của bạn<ArrowUpRight size={15}/></button></aside>
-   <main className="menu-main"><section className="hero"><div className="hero-copy"><span className="hero-eyebrow"><span/> TỪ CĂN BẾP {shop.name.toUpperCase()}</span><h1>Một bữa ngon,<br/>một ngày <em>vui.</em></h1><p>Món quen được làm bằng sự chăm chút.<br className="desktop-break"/> Chọn một chút ngon cho hôm nay nhé.</p><button onClick={()=>{setCategory("main");document.getElementById("menu-heading")?.scrollIntoView({behavior:"smooth",block:"start"});}}>Khám phá món chính<ArrowRight size={17}/></button></div><div className="hero-image"><img src="/images/hero.webp" alt={"Bát cơm gà nóng với rau xanh, gợi ý bữa trưa tại "+shop.name}/><span className="hero-image-label"><Sparkles size={15}/> Nấu bằng cả sự tận tâm</span></div><Leaf className="hero-leaf" size={82} strokeWidth={.6}/></section>
-   <div className="menu-toolbar"><div><p className="eyebrow">CHỌN MỘT CHÚT NGON</p><h2 id="menu-heading">Hôm nay, ăn gì?</h2></div><label className="search-field"><Search size={18}/><input type="search" placeholder="Tìm món bạn thích…" aria-label="Tìm món ăn" value={query} onChange={e=>setQuery(e.target.value)}/></label></div>
-   <div className="mobile-categories" role="group" aria-label="Nhóm món">{categories.map(c=><button key={c.id} onClick={()=>setCategory(c.id)} className={category===c.id?"selected":""}>{c.short}</button>)}</div>
-   <div className="menu-subheading"><span><strong>{categories.find(c=>c.id===category)?.name}</strong><small>{filtered.length} món</small></span><label><SlidersHorizontal size={14}/><select aria-label="Sắp xếp món" value={sort} onChange={e=>setSort(e.target.value)}><option value="recommended">Bếp gợi ý</option><option value="low">Giá thấp đến cao</option><option value="high">Giá cao đến thấp</option></select></label></div>
-   {filtered.length?<div className="food-grid">{filtered.map(m=><article key={m.id} className={"food-card "+(!m.available?"sold-out":"")}><button className="food-photo" onClick={()=>openItem(m)} aria-label={"Xem "+m.name}><FoodImage src={m.image} alt={m.name}/>{m.badge&&<span className="food-badge">{m.badge==="Bếp gợi ý"&&<Flame size={12}/>} {m.badge}</span>}{!m.available&&<span className="unavailable-label">Tạm hết món</span>}</button><div className="food-info"><button className="food-title" onClick={()=>openItem(m)}>{m.name}</button><p>{m.description}</p><div className="food-bottom"><DishPrice item={m}/></div>{connection.state!=="preview"&&<div className="food-actions"><button type="button" className="button secondary add-to-cart-action" onClick={()=>openItem(m,"cart")} disabled={busy||!m.available||!canOrder||!shop.open} aria-label={"Thêm "+m.name+" vào giỏ"}><Plus size={18}/><span>Thêm vào giỏ</span></button><button type="button" className="button primary order-now-action" onClick={()=>openItem(m,"direct")} disabled={busy||!m.available||!canOrder||!shop.open} aria-label={"Gọi ngay "+m.name}><UtensilsCrossed size={18}/><span>Gọi món ngay</span></button></div>}</div></article>)}</div>:<Empty icon={Search} title="Chưa tìm thấy món này">Thử một từ khóa khác hoặc chọn nhóm “Tất cả” nhé.</Empty>}
-   <div className="menu-end"><Leaf size={16}/><p>Ngon hơn khi cùng nhau thưởng thức.</p><span>{shop.name} · {shop.tagline}</span></div><p className="sample-note">Tên quán, thực đơn và ảnh đang là dữ liệu mẫu. Vui lòng báo nhân viên nếu bạn có dị ứng thực phẩm.</p></main>
+   <aside className="category-sidebar"><p className="eyebrow">THỰC ĐƠN</p><nav aria-label="Nhóm món">{activeCategories.map(c=>{const Icon=(catIcons as Record<string,any>)[c.id]||UtensilsCrossed;return <button key={c.id} onClick={()=>setCategory(c.id)} className={category===c.id?"selected":""}><Icon size={19}/><span>{c.name}</span><small>{items.filter(i=>c.id==="all"||i.category===c.id).length}</small></button>;})}</nav><div className="sidebar-note"><span className="leaf-orbit"><Leaf size={25}/></span><h3>Chậm một chút.<br/>Ngon một chút.</h3><p>Chọn món bạn thích,<br/>{shop.name} lo phần còn lại.</p><span className="tiny-rule"/></div><button className="sidebar-orders" onClick={()=>navigate("orders")}><ReceiptText size={17}/>Đơn của bạn<ArrowUpRight size={15}/></button></aside>
+   <main className="menu-main">
+      {bannerConfig?.enabled !== false && (bannerConfig?.items?.length ?? 0) > 0 && (
+        <section className="customer-banner-wrapper" aria-label="Banner nổi bật">
+          {bannerConfig!.mode === "stacked" ? (
+            <div className="customer-banner-stacked" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {bannerConfig!.items.filter(it => it.active !== false).map(item => (
+                <div key={item.id} className="customer-banner-slide">
+                  <img src={item.imageUrl} alt={item.title} className="customer-banner-img" onError={e => { if (!e.currentTarget.src.endsWith("/images/hero.webp")) e.currentTarget.src = "/images/hero.webp"; }} />
+                  <div className="customer-banner-overlay">
+                    {item.badge && <span className="customer-banner-badge">{item.badge}</span>}
+                    <h2 className="customer-banner-title">{item.title}</h2>
+                    {item.description && <p className="customer-banner-desc">{item.description}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            (() => {
+              const activeItems = bannerConfig!.items.filter(it => it.active !== false);
+              if (!activeItems.length) return null;
+              const current = activeItems[Math.min(currentSlide, activeItems.length - 1)] || activeItems[0];
+              return (
+                <>
+                  <div className="customer-banner-slide">
+                    <img src={current.imageUrl} alt={current.title} className="customer-banner-img" onError={e => { if (!e.currentTarget.src.endsWith("/images/hero.webp")) e.currentTarget.src = "/images/hero.webp"; }} />
+                    <div className="customer-banner-overlay">
+                      {current.badge && <span className="customer-banner-badge">{current.badge}</span>}
+                      <h2 className="customer-banner-title">{current.title}</h2>
+                      {current.description && <p className="customer-banner-desc">{current.description}</p>}
+                    </div>
+                  </div>
+                  {activeItems.length > 1 && (
+                    <div className="customer-banner-dots" role="tablist" aria-label="Chọn banner">
+                      {activeItems.map((_, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={"customer-banner-dot " + (idx === (currentSlide % activeItems.length) ? "active" : "")}
+                          onClick={() => setCurrentSlide(idx)}
+                          aria-label={`Banner ${idx + 1}`}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()
+          )}
+        </section>
+      )}
+      <div className="category-search-bar">
+        <Search size={18} />
+        <input
+          id="category-search-input"
+          type="search"
+          placeholder="Tìm món bạn thích…"
+          aria-label="Tìm món ăn"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+        />
+      </div>
+      <div className="mobile-categories" role="group" aria-label="Nhóm món">
+        {activeCategories.map(c => (
+          <button key={c.id} onClick={() => setCategory(c.id)} className={category === c.id ? "selected" : ""}>
+            {c.short || c.name}
+          </button>
+        ))}
+      </div>
+      <div className="menu-subheading">
+        <span>
+          <strong>{activeCategories.find(c => c.id === category)?.name || "Thực đơn"}</strong>
+          <small>{filtered.length} món</small>
+        </span>
+        <label>
+          <SlidersHorizontal size={14} />
+          <select aria-label="Sắp xếp món" value={sort} onChange={e => setSort(e.target.value)}>
+            <option value="recommended">Bếp gợi ý</option>
+            <option value="low">Giá thấp đến cao</option>
+            <option value="high">Giá cao đến thấp</option>
+          </select>
+        </label>
+      </div>
+      {filtered.length ? (
+        <div className="food-grid">
+          {filtered.map(m => (
+            <article key={m.id} className={"food-card " + (!m.available ? "sold-out" : "")}>
+              <button className="food-photo" onClick={() => openItem(m)} aria-label={"Xem " + m.name}>
+                <FoodImage src={m.image} alt={m.name} />
+                {m.badge && <span className="food-badge">{m.badge === "Bếp gợi ý" && <Flame size={12} />} {m.badge}</span>}
+                {!m.available && <span className="unavailable-label">Tạm hết món</span>}
+              </button>
+              <div className="food-info">
+                <button className="food-title" onClick={() => openItem(m)}>{m.name}</button>
+                <p>{m.description}</p>
+                <div className="food-bottom">
+                  <DishPrice item={m} />
+                  <button
+                    type="button"
+                    className="customer-add-btn"
+                    onClick={() => openItem(m, "cart")}
+                    disabled={busy || !m.available || !shop.open}
+                    aria-label={"Thêm " + m.name + " vào giỏ"}
+                  >
+                    <Plus size={22} strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <Empty icon={Search} title="Chưa tìm thấy món này">
+          Thử một từ khóa khác hoặc chọn nhóm “Tất cả” nhé.
+        </Empty>
+      )}
+      <div className="menu-end">
+        <Leaf size={16} />
+        <p>Ngon hơn khi cùng nhau thưởng thức.</p>
+        <span>{shop.name} · {shop.tagline}</span>
+      </div>
+      <p className="sample-note">Tên quán, thực đơn và ảnh đang là dữ liệu mẫu. Vui lòng báo nhân viên nếu bạn có dị ứng thực phẩm.</p>
+    </main>
    {connection.state!=="preview"&&<aside className="cart-sidebar"><CartContents {...cartProps}/><div className="cart-footnote"><CheckCircle2 size={14}/><span>Gọi món tại bàn · Thanh toán với nhân viên</span></div></aside>}
   </div>:view==="orders"?<main className="orders-page"><div className="page-heading"><div><p className="eyebrow">CĂN BẾP ĐANG CHĂM CHÚT</p><h1>Đơn của bạn</h1><p>Theo dõi những món đã gọi tại {table?.name.toLowerCase()}.</p></div><button className="secondary" onClick={()=>void loadOrders()}><RefreshCw size={16}/>Làm mới</button></div>{syncError&&<div className="inline-error"><AlertCircle size={17}/>{syncError}</div>}{orders.length?<div className="customer-orders">{orders.map(o=><OrderReceipt key={o.id} order={o} onCancel={openCustomerCancel} onSupport={()=>{setHelpNote("Tôi cần hỗ trợ hủy đơn #"+o.code);setHelpOpen(true);}}/>)}</div>:<Empty icon={ReceiptText} title="Chưa có đơn nào">Món ngon đang chờ bạn. Chọn món từ thực đơn để bắt đầu nhé.</Empty>}<div className="orders-footer"><button className="primary" onClick={()=>navigate("menu")}><Plus size={17}/>Gọi thêm món</button>{orders.some(o=>o.status!=="cancelled"&&!o.paid)&&<button className="secondary" disabled={callBusy} onClick={()=>void call("bill")}><ReceiptText size={17}/>Yêu cầu thanh toán</button>}</div><p className="small muted center">Đơn tự cập nhật khi trang đang mở. Chỉ hiển thị đơn của lượt phục vụ đang mở trên máy này.</p></main>:<main className="about-page"><div className="about-photo"><img src="/images/hero.webp" alt="Bữa ăn ấm cúng"/></div><div><p className="eyebrow">MỜI BẠN GHÉ CHƠI</p><h1>Một chút {shop.name},<br/>một chút an yên.</h1><p className="about-lead">{shop.address}</p><p>Chúng mình tin rằng một bữa ăn ngon bắt đầu từ những điều giản dị: nguyên liệu tươi, món ăn vừa vị và cảm giác được chăm sóc.</p><div className="about-info"><Clock size={20}/><div><strong>Giờ phục vụ</strong><p>{shop.hours}</p></div></div><div className="about-info"><QrCode size={20}/><div><strong>Quét QR · Nhập tên · Mở bàn</strong><p>Gọi món ngay tại bàn. Nhân viên luôn sẵn sàng hỗ trợ bạn.</p></div></div><button className="primary" onClick={()=>navigate("menu")}>Xem thực đơn<ArrowRight size={17}/></button><p className="small muted">Đây là nội dung giới thiệu mẫu; chủ quán có thể cập nhật thông tin trong mục Cài đặt.</p></div></main>}
-  <nav className="mobile-nav" aria-label="Điều hướng điện thoại"><button onClick={()=>navigate("menu")} className={view==="menu"?"active":""}><UtensilsCrossed size={20}/><span>Thực đơn</span></button><button onClick={()=>navigate("orders")} className={view==="orders"?"active":""}><ReceiptText size={20}/><span>Đơn của bạn {activeOrders>0&&`(${activeOrders})`}</span></button><button onClick={()=>setHelpOpen(true)} disabled={!canOrder}><Bell size={20}/><span>Hỗ trợ</span></button></nav>
-  {connection.state!=="preview"&&count>0&&view==="menu"&&!selected&&!cartOpen&&!success&&!pendingOpen&&!helpOpen&&!failedSubmission&&<div className="mobile-cart-dock">{addedNotice&&<div ref={addedNoticeRef} className="cart-added-notice" role="status"><FoodImage src={addedNotice.item.image} alt=""/><div className="cart-added-copy"><strong>Đã thêm {addedNotice.quantity} × {addedNotice.item.name}</strong><small>Giỏ có {count} phần · {money(total)}</small></div><div className="cart-added-actions"><button className="cart-added-view secondary" onClick={openCart}>Xem giỏ</button><button className="cart-added-dismiss icon-btn" onClick={()=>setAddedNotice(null)} aria-label="Đóng thông báo thêm món"><X size={18}/></button></div></div>}<button className="mobile-cart-bar" onClick={openCart}><span className="cart-count">{count}</span><span>{pendingOrder?"Kiểm tra lần gửi trước":"Xem giỏ & đặt món"}<strong>{money(cartPending?.expectedTotal??total)}</strong></span><ArrowRight size={20}/></button></div>}
+  <nav className="mobile-nav" aria-label="Điều hướng điện thoại"><button onClick={()=>navigate("menu")} className={view==="menu"?"active":""}><UtensilsCrossed size={20}/><span>Thực đơn</span></button><button onClick={()=>navigate("orders")} className={view==="orders"?"active":""}><ReceiptText size={20}/><span>Đơn của bạn {activeOrders>0&&`(${activeOrders})`}</span></button><button onClick={()=>setHelpOpen(true)} className={helpOpen?"active":""}><Bell size={20}/><span>Hỗ trợ</span></button></nav>
+  {count>0&&view==="menu"&&!selected&&!cartOpen&&!success&&!pendingOpen&&!helpOpen&&!failedSubmission&&(
+    <button
+      type="button"
+      className="customer-floating-cart"
+      onClick={openCart}
+      aria-label={`Giỏ hàng có ${count} phần, tổng ${money(cartPending?.expectedTotal??total)}`}
+    >
+      <div className="customer-floating-cart-left">
+        <ShoppingBag size={20}/>
+        <span>Giỏ hàng</span>
+        <span className="customer-floating-cart-badge">{count}</span>
+      </div>
+      <div className="customer-floating-cart-right">
+        <span>{money(cartPending?.expectedTotal??total)}</span>
+        <ArrowRight size={18}/>
+      </div>
+    </button>
+  )}
   </>}
   {customerCancel&&<Modal title={"Hủy đơn #"+customerCancel.code} onClose={()=>!cancelBusy&&setCustomerCancel(null)}><form className="form-body" onSubmit={event=>{event.preventDefault();void submitCustomerCancel();}}><p>Hủy toàn bộ lần gọi món này, tổng cộng <strong>{money(customerCancel.total)}</strong>. Chỉ hủy được khi quán chưa nhận đơn và chưa thu tiền.</p><label className="field"><span>Lý do hủy</span><select value={cancelReason} disabled={cancelBusy} onChange={event=>{setCancelReason(event.target.value);setCancelError("");}}>{["Đặt nhầm món","Muốn thay đổi món hoặc số lượng","Không muốn dùng nữa","Khác"].map(reason=><option key={reason} value={reason}>{reason}</option>)}</select></label>{cancelReason==="Khác"&&<label className="field"><span>Nội dung lý do</span><textarea required maxLength={180} rows={3} value={cancelDetail} disabled={cancelBusy} onChange={event=>setCancelDetail(event.target.value)}/></label>}{cancelError&&<p className="submission-error" role="alert">{cancelError}</p>}<div className="customer-cancel-actions"><button type="button" className="secondary" disabled={cancelBusy} onClick={()=>setCustomerCancel(null)}>Giữ lại đơn</button><button type="submit" className="danger-button" disabled={cancelBusy||!canOrder}>{cancelBusy?<LoaderCircle className="spin" size={18}/>:<X size={18}/>}<span>{cancelBusy?"Đang hủy…":"Xác nhận hủy đơn"}</span></button></div></form></Modal>}
   {selected&&<ItemModal preview={connection.state==="preview"} key={selected.id+":"+(itemDraft?.key||"new")+":"+itemAction} item={items.find(i=>i.id===selected.id)||selected} initialLine={itemDraft} action={itemAction} onClose={()=>!busy&&setSelected(null)} onAdd={line=>itemAction==="direct"?void submit("direct",line):add(line)} onEdit={()=>setSubmissionError("")} enabled={canOrder&&(!!pendingOrder||shop.open)} busy={busy} pending={pendingOrder} error={submissionError} tableName={table?.name||"bàn của bạn"}/>}

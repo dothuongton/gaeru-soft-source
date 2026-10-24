@@ -20,6 +20,8 @@ import {handleRealtimeUpgrade, notifyRealtimeInvalidation} from "@/lib/realtime-
 import {getVapidConfig, subscribeStaffDevice, unsubscribeStaffDevice, getStaffSubscriptionStatus, dispatchStaffPush, sendTestPush} from "@/lib/staff-push";
 import {listPaidInvoices,paidInvoiceDetail} from "@/lib/paid-invoices-server";
 import {saveTableZones} from "@/lib/table-zones-server";
+import {getCategories, saveCategories} from "@/lib/categories-server";
+import {getBannerConfig, saveBannerConfig} from "@/lib/banner-server";
 import {recordServiceReminder} from "@/lib/service-reminders";
 import {cancelUnservedLine,transitionFromStage} from "@/lib/order-line-transition";
 import {
@@ -69,13 +71,19 @@ async function handleScoped(request:Request){
     return json({...await getStaffSubscriptionStatus({userId, deviceId}),enabled:config.enabled,vapidPublicKey:config.publicKey||null});
    }
    if(path==="admin/accounts"){allow("staff.manage");return json(await listStaffAccounts(access!));}
-   if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);const callSummary=connection.state==="active"&&connection.session?(await db.prepare("SELECT kind,request_count AS requestCount,created_at + 30000 AS nextAllowedAt FROM service_requests WHERE session_id = ?").bind(connection.session.id).all()).results:[];return conditionalJson(request,{callSummary,items,shop:publicShop(shop,currentStoreId()),table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings},device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
+   if(path==="admin/categories"){allow("settings.manage");return json(await getCategories());}
+   if(path==="admin/banner"){allow("settings.manage");return json(await getBannerConfig());}
+   if(path==="menu"){const {preview,tableToken,sessionHint}=readQrEntry(url.searchParams),[items,shop,requestedTable,device,displaySettings,themeSettings,categories,banner]=await Promise.all([getMenu(),getShop(),getTable(tableToken,preview),deviceIdentity(request,true),getDisplaySettings(),getThemeSettings(),getCategories(),getBannerConfig()]);const {table,connection}=await getMenuConnection(requestedTable,device.hash,preview,sessionHint);const callSummary=connection.state==="active"&&connection.session?(await db.prepare("SELECT kind,request_count AS requestCount,created_at + 30000 AS nextAllowedAt FROM service_requests WHERE session_id = ?").bind(connection.session.id).all()).results:[];return conditionalJson(request,{callSummary,items,shop:publicShop(shop,currentStoreId()),table,isStaff:!!access?.isStaff,access,preview,connection,displaySettings,themeSettings,categories,banner},device.setCookie?{"Set-Cookie":device.setCookie}:undefined);}
    if(path==="orders"){const {tableToken,sessionHint}=readQrEntry(url.searchParams),table=await getTable(tableToken),session=await requireActiveSession(request,table,sessionHint);const r=await db.prepare("SELECT * FROM orders WHERE client_token = ? AND table_id = ? AND dining_session_id = ? ORDER BY created_at DESC,id DESC").bind(session.browser_hash,table.id,session.id).all<Record<string,unknown>>();return json({orders:r.results.map(publicOrder)});}
    if(path==="admin/bill-history"){
     if(!access||(!hasPermission(access,"orders.view")&&!hasPermission(access,"revenue.view")))throw new OrderError("Bạn chưa có quyền xem hóa đơn.",403);
     const sessionId=checkedText(url.searchParams.get("session"),128,true);
-    const result=await db.prepare("SELECT id,order_id AS orderId,kind,actor,at,before_json AS beforeJson,after_json AS afterJson FROM order_audit WHERE session_id = ? ORDER BY id").bind(sessionId).all<Record<string,unknown>>();
-    return json({history:result.results.map(row=>({id:row.id,orderId:row.orderId,kind:row.kind,actor:row.actor,at:row.at,before:row.beforeJson?JSON.parse(String(row.beforeJson)):null,after:JSON.parse(String(row.afterJson))}))});
+    try {
+     const result=await db.prepare("SELECT id,order_id AS orderId,kind,actor,at,before_json AS beforeJson,after_json AS afterJson FROM order_audit WHERE session_id = ? ORDER BY id").bind(sessionId).all<Record<string,unknown>>();
+     return json({history:result.results.map(row=>({id:row.id,orderId:row.orderId,kind:row.kind,actor:row.actor,at:row.at,before:row.beforeJson?JSON.parse(String(row.beforeJson)):null,after:JSON.parse(String(row.afterJson))}))});
+    } catch {
+     return json({history:[]});
+    }
    }
    if(path==="admin/invoices"){allow("revenue.view");return json(await listPaidInvoices(url.searchParams));}
    if(path.startsWith("admin/invoices/")){allow("revenue.view");return json(await paidInvoiceDetail(decodeURIComponent(path.slice("admin/invoices/".length))));}
@@ -237,6 +245,8 @@ async function handleScoped(request:Request){
   if(request.method==="PATCH"&&path==="admin/zones"){allow("tables.manage");const result=await saveTableZones(b);notifyRealtimeInvalidation(currentStoreId(),"board");return json(result);}
   if(request.method==="PATCH"&&path==="admin/display-settings"){allow("settings.manage");return json(await saveDisplaySettings(b));}
   if(request.method==="PATCH"&&path==="admin/theme-settings"){allow("settings.manage");return json(await saveThemeSettings(b));}
+  if((request.method==="PATCH"||request.method==="POST")&&path==="admin/categories"){allow("settings.manage");const res=await saveCategories(b.categories??b);notifyRealtimeInvalidation(currentStoreId(),"menu");return json(res);}
+  if((request.method==="PATCH"||request.method==="POST")&&path==="admin/banner"){allow("settings.manage");const res=await saveBannerConfig(b.banner??b);notifyRealtimeInvalidation(currentStoreId(),"menu");return json(res);}
   if(request.method==="PATCH"&&path==="admin/order"){
    allow(b.action==="paid"?"payments.collect":b.action==="line_cancel"||b.status==="cancelled"?"orders.cancel":"orders.manage");
    const id=checkedText(b.id,60,true),old=await db.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<Record<string,unknown>>();if(!old)throw new OrderError("Không tìm thấy đơn.",404);

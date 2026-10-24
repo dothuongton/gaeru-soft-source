@@ -12,9 +12,16 @@ const changedMessage="Số tiền hoặc danh sách đơn của bàn vừa thay 
 
 /** The quote and its unpaid orders come from one consistent D1 read snapshot. */
 export async function getTablePaymentQuote(params:URLSearchParams):Promise<TablePaymentQuote>{
- const rawSession=params.get("session")??params.get("sessionId");
+ let rawSession=params.get("session")??params.get("sessionId");
+ const rawTable=params.get("tableId")??params.get("table");
+ const db=database();
+ if(!rawSession?.trim()&&rawTable?.trim()){
+  const tableId=checkedText(rawTable,64,true);
+  const active=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
+  if(active?.id) rawSession=active.id;
+ }
  if(!rawSession?.trim())throw new OrderError("Thiếu mã phiên bàn. Đóng bảng thanh toán và mở lại từ bàn đang phục vụ.",400);
- const sessionId=checkedText(rawSession,128,true),db=database();
+ const sessionId=checkedText(rawSession,128,true);
  const result=await db.batch([
   db.prepare("SELECT s.id,s.table_id,COALESCE(t.name,s.table_name) AS table_name,s.customer_name,s.status,s.created_at,s.updated_at FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id WHERE s.id = ?").bind(sessionId),
   db.prepare(`SELECT
@@ -54,34 +61,64 @@ export async function payTableBalance(body:Record<string,unknown>,actor="Nhân v
  const normalized=JSON.stringify({sessionId,orderIds,expectedTotal:amount,paymentMethod});
  const requestHash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(normalized))),byte=>byte.toString(16).padStart(2,"0")).join("");
  const db=database(),attemptId=crypto.randomUUID(),paidAt=Date.now();
- const result=await db.batch([
-  db.prepare(`
-   INSERT OR IGNORE INTO table_payment_receipts
-    (id,request_id,request_hash,session_id,table_id,table_name,customer_name,order_ids_json,order_count,amount,payment_method,paid_at,orders_json,audit_json)
-   SELECT ?,?,?,s.id,s.table_id,COALESCE(t.name,s.table_name),s.customer_name,?,?,?,?,?,
-    (SELECT json_group_array(json_object('id',o.id,'code',o.code,'table_id',o.table_id,'table_name',o.table_name,'dining_session_id',o.dining_session_id,'customer_name',o.customer_name,'items',json(o.items),'total',o.total,'note',o.note,'status',o.status,'paid',o.paid,'paid_at',o.paid_at,'payment_method',o.payment_method,'cancel_reason',o.cancel_reason,'created_at',o.created_at,'updated_at',o.updated_at)) FROM (SELECT * FROM orders WHERE dining_session_id = s.id ORDER BY created_at,id) o),
-    (SELECT json_group_array(json_object('id',a.id,'kind',a.kind,'actor',a.actor,'at',a.at,'before',json(a.before_json),'after',json(a.after_json))) FROM order_audit a WHERE a.session_id = s.id)
-   FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id
-   WHERE s.id = ? AND s.status = 'active'
-    AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.status NOT IN ('cancelled','served'))
-    AND (SELECT COUNT(*) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
-    AND (SELECT COALESCE(SUM(o.total),0) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
-    AND NOT EXISTS (
-     SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled'
-      AND o.id NOT IN (SELECT value FROM json_each(?))
-    )
-  `).bind(attemptId,requestId,requestHash,orderIdsJson,orderIds.length,amount,paymentMethod,paidAt,sessionId,orderIds.length,amount,orderIdsJson),
-  db.prepare(`
-   UPDATE orders SET paid = 1,paid_at = ?,payment_method = ?,updated_at = ?,last_actor = ?
-   WHERE dining_session_id = ? AND paid = 0 AND status != 'cancelled'
-    AND EXISTS (
-     SELECT 1 FROM table_payment_receipts r
-     WHERE r.id = ? AND r.session_id = orders.dining_session_id
-      AND orders.id IN (SELECT value FROM json_each(r.order_ids_json))
-    )
-  `).bind(paidAt,paymentMethod,paidAt,actor,sessionId,attemptId),
-  db.prepare("SELECT id,request_id,request_hash,session_id,order_ids_json,amount,payment_method,paid_at FROM table_payment_receipts WHERE request_id = ?").bind(requestId)
- ]);
+ let result;
+ try {
+  result=await db.batch([
+   db.prepare(`
+    INSERT OR IGNORE INTO table_payment_receipts
+     (id,request_id,request_hash,session_id,table_id,table_name,customer_name,order_ids_json,order_count,amount,payment_method,paid_at,orders_json,audit_json)
+    SELECT ?,?,?,s.id,s.table_id,COALESCE(t.name,s.table_name),s.customer_name,?,?,?,?,?,
+     (SELECT json_group_array(json_object('id',o.id,'code',o.code,'table_id',o.table_id,'table_name',o.table_name,'dining_session_id',o.dining_session_id,'customer_name',o.customer_name,'items',json(o.items),'total',o.total,'note',o.note,'status',o.status,'paid',o.paid,'paid_at',o.paid_at,'payment_method',o.payment_method,'cancel_reason',o.cancel_reason,'created_at',o.created_at,'updated_at',o.updated_at)) FROM (SELECT * FROM orders WHERE dining_session_id = s.id ORDER BY created_at,id) o),
+     (SELECT json_group_array(json_object('id',a.id,'kind',a.kind,'actor',a.actor,'at',a.at,'before',json(a.before_json),'after',json(a.after_json))) FROM order_audit a WHERE a.session_id = s.id)
+    FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id
+    WHERE s.id = ? AND s.status = 'active'
+     AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.status NOT IN ('cancelled','served'))
+     AND (SELECT COUNT(*) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
+     AND (SELECT COALESCE(SUM(o.total),0) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
+     AND NOT EXISTS (
+      SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled'
+       AND o.id NOT IN (SELECT value FROM json_each(?))
+     )
+   `).bind(attemptId,requestId,requestHash,orderIdsJson,orderIds.length,amount,paymentMethod,paidAt,sessionId,orderIds.length,amount,orderIdsJson),
+   db.prepare(`
+    UPDATE orders SET paid = 1,paid_at = ?,payment_method = ?,updated_at = ?,last_actor = ?
+    WHERE dining_session_id = ? AND paid = 0 AND status != 'cancelled'
+     AND EXISTS (
+      SELECT 1 FROM table_payment_receipts r
+      WHERE r.id = ? AND r.session_id = orders.dining_session_id
+       AND orders.id IN (SELECT value FROM json_each(r.order_ids_json))
+     )
+   `).bind(paidAt,paymentMethod,paidAt,actor,sessionId,attemptId),
+   db.prepare("SELECT id,request_id,request_hash,session_id,order_ids_json,amount,payment_method,paid_at FROM table_payment_receipts WHERE request_id = ?").bind(requestId)
+  ]);
+ } catch {
+  result=await db.batch([
+   db.prepare(`
+    INSERT OR IGNORE INTO table_payment_receipts
+     (id,request_id,request_hash,session_id,table_id,table_name,customer_name,order_ids_json,order_count,amount,payment_method,paid_at)
+    SELECT ?,?,?,s.id,s.table_id,COALESCE(t.name,s.table_name),s.customer_name,?,?,?,?,?
+    FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id
+    WHERE s.id = ? AND s.status = 'active'
+     AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.status NOT IN ('cancelled','served'))
+     AND (SELECT COUNT(*) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
+     AND (SELECT COALESCE(SUM(o.total),0) FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') = ?
+     AND NOT EXISTS (
+      SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled'
+       AND o.id NOT IN (SELECT value FROM json_each(?))
+     )
+   `).bind(attemptId,requestId,requestHash,orderIdsJson,orderIds.length,amount,paymentMethod,paidAt,sessionId,orderIds.length,amount,orderIdsJson),
+   db.prepare(`
+    UPDATE orders SET paid = 1,paid_at = ?,payment_method = ?,updated_at = ?
+    WHERE dining_session_id = ? AND paid = 0 AND status != 'cancelled'
+     AND EXISTS (
+      SELECT 1 FROM table_payment_receipts r
+      WHERE r.id = ? AND r.session_id = orders.dining_session_id
+       AND orders.id IN (SELECT value FROM json_each(r.order_ids_json))
+     )
+   `).bind(paidAt,paymentMethod,paidAt,sessionId,attemptId),
+   db.prepare("SELECT id,request_id,request_hash,session_id,order_ids_json,amount,payment_method,paid_at FROM table_payment_receipts WHERE request_id = ?").bind(requestId)
+  ]);
+ }
  const receipt=result[2].results[0] as ReceiptRow|undefined;
  if(!receipt){
   const pending=await db.prepare("SELECT COUNT(*) AS count FROM orders WHERE dining_session_id = ? AND status NOT IN ('cancelled','served')").bind(sessionId).first<{count:number}>();

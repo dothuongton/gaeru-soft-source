@@ -110,6 +110,8 @@ const StaffAccountsPanel = lazy(() => import("./staff-accounts-panel").then(m =>
 const StoreManagement = lazy(() => import("./store-management").then(m => ({ default: m.StoreManagement })));
 const DisplaySettingsPanel = lazy(() => import("./display-settings-panel").then(m => ({ default: m.DisplaySettingsPanel })));
 const ThemeSettingsPanel = lazy(() => import("./theme-settings-panel").then(m => ({ default: m.ThemeSettingsPanel })));
+const CategoryManagerPanel = lazy(() => import("./category-manager-panel").then(m => ({ default: m.CategoryManagerPanel })));
+const BannerManagerPanel = lazy(() => import("./banner-manager-panel").then(m => ({ default: m.BannerManagerPanel })));
 const TablePaymentDialog = lazy(() => import("./table-payment-dialog").then(m => ({ default: m.TablePaymentDialog })));
 const TableTransferDialog = lazy(() => import("./table-transfer-dialog").then(m => ({ default: m.TableTransferDialog })));
 
@@ -172,6 +174,7 @@ export default function AdminPanel({
   ].filter(item => item.allowed);
   const [reportOrderScope, setReportOrderScope] = useState<"orders.view" | "revenue.view">("orders.view");
   const [tablePaymentSessionId, setTablePaymentSessionId] = useState<string | null>(null);
+  const [tablePaymentTableId, setTablePaymentTableId] = useState<string | null>(null);
   const [transferSession, setTransferSession] = useState<AdminTableSession | null>(null);
   const [mutationError, setMutationError] = useState("");
   const workingRef = useRef(false);
@@ -665,7 +668,10 @@ export default function AdminPanel({
                 onTransfer={setTransferSession}
                 onCollect={openPayment}
                 onCancelLine={(order,orderLineId,count,reason,requestId)=>mutate("order",{id:order.id,action:"line_cancel",orderLineId,count,reason,requestId,expectedUpdatedAt:order.updated_at},"Đã hủy phần chưa phục vụ và cập nhật bill.",`order:${order.id}`)}
-                onCollectTable={setTablePaymentSessionId}
+                onCollectTable={(sessionId, tableId) => {
+                  setTablePaymentSessionId(sessionId);
+                  setTablePaymentTableId(tableId ?? null);
+                }}
                 onCancel={order => {
                   setCancelOrder(order);
                   setReason("");
@@ -828,6 +834,8 @@ export default function AdminPanel({
           )}
           {tab === "settings" && canSettings && !data.compact && (
             <Suspense fallback={<p role="status">Đang tải cài đặt quán…</p>}>
+              <CategoryManagerPanel working={working} notify={notify} onRefresh={onMenuRefresh} />
+              <BannerManagerPanel working={working} notify={notify} onRefresh={onMenuRefresh} />
               <ThemeSettingsPanel shopName={shop.name} value={normalizeThemeSettings(data.themeSettings ?? themeSettings)} working={working} onSave={value => mutate("theme-settings", value, "Đã lưu màu giao diện và màu chữ cho quán.")} />
               <DisplaySettingsPanel value={normalizeDisplaySettings(data.displaySettings)} working={working} previewItem={data.items.find(item => !!item.available) || data.items[0]} onSave={value => mutate("display-settings", value, "Đã lưu thời gian thông báo, cỡ chữ và kích thước ảnh món.")} />
               <ShopForm key={brandingRevision(data.shop) + data.shop.open} shop={data.shop} working={working} onSave={s => mutate("shop", s, "Đã cập nhật thông tin quán.")} />
@@ -953,6 +961,7 @@ export default function AdminPanel({
         <Suspense fallback={null}>
           <TablePaymentDialog
             sessionId={tablePaymentSessionId}
+            tableId={tablePaymentTableId ?? undefined}
             canClose={canTables && (() => {
               const sessionOrders = data?.orders.filter(o => o.dining_session_id === tablePaymentSessionId && o.status !== "cancelled") ?? [];
               return sessionOrders.length > 0 && sessionOrders.every(o => o.status === "served");
@@ -965,11 +974,17 @@ export default function AdminPanel({
               const session = data?.sessions.find(s => s.id === tablePaymentSessionId);
               if (session) {
                 setTablePaymentSessionId(null);
+                setTablePaymentTableId(null);
                 await sessionAction(session.id, "close");
               }
             } : undefined}
-            onClose={() => setTablePaymentSessionId(null)}
+            onClose={() => {
+              setTablePaymentSessionId(null);
+              setTablePaymentTableId(null);
+            }}
             onPaid={result => {
+              setTablePaymentSessionId(null);
+              setTablePaymentTableId(null);
               setRevenueRevision(n => n + 1);
               void reload(true);
               void onMenuRefresh().catch(() => {});

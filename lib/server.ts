@@ -1,5 +1,20 @@
 import {storeDatabase,currentStoreId,rootDatabase} from "./store-database";
 import { defaultShop, sampleMenu, OrderError } from "./menu";
+import { olaMenuItems } from "./ola-menu-data";
+import { defaultOlaCategories } from "./categories-server";
+import { defaultOlaBanner } from "./banner-server";
+
+export const defaultOlaShop = {
+  logo: "",
+  name: "Ola Quán",
+  tagline: "Ngon ngọt",
+  hours: "08:00 - 22:30",
+  address: "Hà Nội",
+  open: true,
+  bankAccount: "1062680102",
+  bankName: "Vietcombank",
+  accountHolder: "BÙI THỊ THU HUYỀN"
+};
 import type { MenuItem, DiningTable, Shop, Order } from "./menu";
 export const database=storeDatabase;
 export function requireSameOrigin(request:Request){const origin=request.headers.get("origin");if(origin&&origin!==new URL(request.url).origin)throw new OrderError("Yêu cầu không hợp lệ.",403);if(request.headers.get("sec-fetch-site")==="cross-site")throw new OrderError("Yêu cầu không hợp lệ.",403);if(!request.headers.get("content-type")?.includes("application/json"))throw new OrderError("Nội dung yêu cầu không hợp lệ.",415);}
@@ -57,8 +72,14 @@ export async function seed(){
    const db = database();
    const existing = await db.prepare("SELECT value FROM settings WHERE key = ?").bind("seeded-v1").first();
    if (!existing) {
-    const stmts = [db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("shop", JSON.stringify(defaultShop))];
-    for (const m of storeId === "main" ? sampleMenu : []) {
+    const shopData = storeId === "ola" ? defaultOlaShop : defaultShop;
+    const stmts = [db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("shop", JSON.stringify(shopData))];
+    if (storeId === "ola") {
+     stmts.push(db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("categories", JSON.stringify(defaultOlaCategories)));
+     stmts.push(db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)").bind("banner", JSON.stringify(defaultOlaBanner)));
+    }
+    const menuToSeed = storeId === "ola" ? olaMenuItems : storeId === "main" ? sampleMenu : [];
+    for (const m of menuToSeed) {
      stmts.push(db.prepare("INSERT OR IGNORE INTO menu_items (id,name,description,category,price,image,badge,available,sort) VALUES (?,?,?,?,?,?,?,?,?)").bind(m.id, m.name, m.description, m.category, m.price, m.image, m.badge, m.available, m.sort));
     }
     for (let i = 1; i <= 12; i++) {

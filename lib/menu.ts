@@ -1,4 +1,4 @@
-export type Category = "main" | "light" | "drink" | "dessert";
+export type Category = "main" | "light" | "drink" | "dessert" | (string & {});
 export type Promotion = {enabled:boolean; type:"percent"|"amount"; value:number; startsAt:number|null; endsAt:number|null};
 export type MenuExtra = {id:string;label:string;price:number};
 export type MenuItem = { extras?:MenuExtra[]; promotion?:Promotion|null; id:string; name:string; description:string; category:Category; price:number; image:string; badge:string; available:number; sort:number };

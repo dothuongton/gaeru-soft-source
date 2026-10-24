@@ -19,6 +19,10 @@ export async function resolveStore(request:Request){
  if(!/^[a-z0-9][a-z0-9-]{0,47}$/.test(id))throw new OrderError("Mã cửa hàng không hợp lệ.",404);
  let store=await rootDatabase().prepare("SELECT * FROM stores WHERE id = ?").bind(id).first<StoreRow>();
  if(!store&&id==="main"){await ensureMainStore();store=await rootDatabase().prepare("SELECT * FROM stores WHERE id = ?").bind(id).first<StoreRow>();}
+ if(!store&&id==="ola"){
+  await rootDatabase().prepare("INSERT OR IGNORE INTO stores (id,name,admin_email,request_id,created_by,created_at) VALUES ('ola','Ola Quán','','store-ola','platform',?)").bind(Date.now()).run();
+  store=await rootDatabase().prepare("SELECT * FROM stores WHERE id = ?").bind(id).first<StoreRow>();
+ }
  if(!store)throw new OrderError("Không tìm thấy cửa hàng. Vui lòng kiểm tra lại liên kết.",404);return store;
 }
 export async function listStores(request:Request){

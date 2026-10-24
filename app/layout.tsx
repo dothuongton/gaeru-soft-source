@@ -31,13 +31,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi">
+    <html lang="vi" style={{ backgroundColor: "#f7f8f4" }}>
       <head>
         {/* Emit explicitly: the current renderer omits appleWebApp.capable. */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="theme-color" content="#244f3c" />
+        <style dangerouslySetInnerHTML={{ __html: "html,body{background-color:#f7f8f4!important;color:#27382e;}" }} />
       </head>
-      <body className="antialiased">
+      <body className="antialiased" style={{ backgroundColor: "#f7f8f4" }}>
         {children}
         <PwaRegistration />
       </body>

@@ -30,6 +30,9 @@ function loadApp(entry = "route") {
     tableZones:"lib/table-zones.ts",
     tableZonesServer:"lib/table-zones-server.ts",
     storeDatabase:"lib/store-database.ts",storePlatform:"lib/store-platform.ts",
+    categoriesServer: "lib/categories-server.ts",
+    bannerServer: "lib/banner-server.ts",
+    olaMenuData: "lib/ola-menu-data.ts",
     server: "lib/server.ts",
     menu: "lib/menu.ts",
     auth: "lib/auth.ts",
@@ -75,6 +78,9 @@ function loadApp(entry = "route") {
       if(specifier==="node:async_hooks")return {AsyncLocalStorage};
       if(specifier.endsWith("/store-database"))return load("storeDatabase");
       if(specifier.endsWith("/store-platform"))return load("storePlatform");
+      if(specifier.endsWith("/categories-server"))return load("categoriesServer");
+      if(specifier.endsWith("/banner-server"))return load("bannerServer");
+      if(specifier.endsWith("/ola-menu-data"))return load("olaMenuData");
       if (specifier === "cloudflare:workers") return { env: environment };
       if (specifier === "@/lib/server" || specifier === "./server") return load("server");
       if (specifier === "@/lib/menu" || specifier === "./menu") return load("menu");

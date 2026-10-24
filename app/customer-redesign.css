@@ -1,0 +1,421 @@
+/* GAERU Soft — Customer UI Redesign matching Image 3 */
+
+/* Customer Header */
+.customer-header {
+  height: 60px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+.customer-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.3px;
+  color: var(--moc-accent-text, #244f3c);
+  text-decoration: none;
+}
+
+.customer-brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--moc-accent, #244f3c);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 18px;
+  overflow: hidden;
+}
+
+.customer-brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.customer-search-toggle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--moc-text, #27382e);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.customer-search-toggle:active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Category Search Bar */
+.category-search-bar {
+  margin: 10px 0 14px;
+  position: relative;
+}
+
+.category-search-bar input {
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--line, #e4e4e7);
+  background: #ffffff;
+  padding: 0 14px 0 38px;
+  font-size: 14px;
+  color: var(--ink, #18181b);
+}
+
+.category-search-bar svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted, #71717a);
+  pointer-events: none;
+}
+
+/* Dynamic Hero Banner */
+.customer-banner-wrapper {
+  margin: 12px 0 16px;
+}
+
+.customer-banner-slide {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #f4f6f3;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05);
+}
+
+.customer-banner-img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+}
+
+.customer-banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.72) 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 16px;
+  color: #ffffff;
+}
+
+.customer-banner-badge {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--moc-accent, #244f3c);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.customer-banner-title {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0 0 4px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.customer-banner-desc {
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0.92;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Banner Dots Indicator */
+.customer-banner-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.customer-banner-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d4d4d8;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.customer-banner-dot.active {
+  width: 18px;
+  border-radius: 4px;
+  background: var(--moc-accent, #244f3c);
+}
+
+/* 2-Column Mobile Food Grid matching Image 3 */
+@media screen and (max-width: 820px) {
+  .app-shell[data-view="menu"] .food-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    padding: 0 0 10px !important;
+  }
+
+  .app-shell[data-view="menu"] .food-card {
+    display: flex !important;
+    flex-direction: column !important;
+    background: #ffffff !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(0, 0, 0, 0.05) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03) !important;
+    padding: 0 !important;
+    transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+  }
+
+  .app-shell[data-view="menu"] .food-card:active {
+    transform: scale(0.985);
+  }
+
+  .app-shell[data-view="menu"] .food-photo {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 1.1 / 1 !important;
+    min-height: 0 !important;
+    background: #f6f7f4 !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+    position: relative !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  .app-shell[data-view="menu"] .food-photo img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block !important;
+  }
+
+  .app-shell[data-view="menu"] .food-badge {
+    position: absolute !important;
+    top: 8px !important;
+    left: 8px !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+    color: var(--moc-accent, #244f3c) !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 3px 8px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+
+  .app-shell[data-view="menu"] .food-info {
+    padding: 12px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    justify-content: space-between !important;
+  }
+
+  .app-shell[data-view="menu"] .food-title {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    color: var(--ink, #18181b) !important;
+    line-height: 1.3 !important;
+    margin: 0 0 4px !important;
+    text-align: left !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+  }
+
+  .app-shell[data-view="menu"] .food-info p {
+    font-size: 12px !important;
+    color: var(--muted, #71717a) !important;
+    line-height: 1.35 !important;
+    margin: 0 0 10px !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    min-height: 32px !important;
+  }
+
+  .app-shell[data-view="menu"] .food-bottom {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin-top: auto !important;
+    padding-top: 4px !important;
+  }
+
+  .app-shell[data-view="menu"] .food-bottom > strong {
+    font-size: 15px !important;
+    font-weight: 750 !important;
+    color: var(--ink, #18181b) !important;
+    letter-spacing: -0.2px !important;
+  }
+
+  /* Enlarged '+' Add to Cart Button matching Image 3 */
+  .customer-add-btn {
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 50% !important;
+    background: #eef4ec !important;
+    color: var(--moc-accent, #244f3c) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 0 !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease !important;
+    flex-shrink: 0 !important;
+    touch-action: manipulation !important;
+  }
+
+  .customer-add-btn:active {
+    background: var(--moc-accent, #244f3c) !important;
+    color: #ffffff !important;
+    transform: scale(0.92) !important;
+  }
+
+  /* Hide old text actions button in 2-col cards */
+  .app-shell[data-view="menu"] .food-actions {
+    display: none !important;
+  }
+}
+
+/* Floating Cart Dock matching Image 3 */
+.customer-floating-cart {
+  position: fixed;
+  bottom: 68px;
+  left: 14px;
+  right: 14px;
+  z-index: 35;
+  background: var(--moc-accent, #244f3c);
+  color: #ffffff;
+  border-radius: 16px;
+  height: 52px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 6px 24px rgba(36, 79, 60, 0.35);
+  border: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  animation: slideUpFade 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.customer-floating-cart:active {
+  transform: scale(0.985);
+}
+
+.customer-floating-cart-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.customer-floating-cart-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.customer-floating-cart-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 3-Button Mobile Navigation matching user requirement */
+.app-shell .mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 58px;
+  background: #ffffff;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 36;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.app-shell .mobile-nav button {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: #71717a;
+  font-size: 11px;
+  font-weight: 550;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+
+.app-shell .mobile-nav button.active {
+  color: var(--moc-accent, #244f3c);
+  font-weight: 700;
+}

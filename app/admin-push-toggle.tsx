@@ -71,7 +71,26 @@ function PushControl({ notify, storeId, userId }: { notify: (msg: string,kind?:"
         );
         if (cancelled || epoch!==generation.current) return;
         // Permissions may have changed while the network check was pending.
-        const next=Notification.permission==="denied"?"denied":Notification.permission!=="granted"&&result.state==="subscribed"?"ready":result.state;
+        let next=Notification.permission==="denied"?"denied":Notification.permission!=="granted"&&result.state==="subscribed"?"ready":result.state;
+        if (Notification.permission === "granted" && result.vapidKey && next === "ready") {
+          try {
+            const reg = await navigator.serviceWorker.getRegistration();
+            const sub = reg?.active ? await reg.pushManager.getSubscription() : null;
+            if (sub && matchesApplicationKey(sub, result.vapidKey)) {
+              const rawKey = sub.getKey ? sub.getKey("p256dh") : null;
+              const rawAuth = sub.getKey ? sub.getKey("auth") : null;
+              const p256dh = rawKey ? btoa(String.fromCharCode(...new Uint8Array(rawKey))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : "";
+              const auth = rawAuth ? btoa(String.fromCharCode(...new Uint8Array(rawAuth))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : "";
+              if (p256dh && auth) {
+                next = "subscribed";
+                void pushApi("admin/push/subscribe", {
+                  method: "POST",
+                  body: JSON.stringify({ deviceId, subscription: { endpoint: sub.endpoint, keys: { p256dh, auth } } })
+                }).catch(() => {});
+              }
+            }
+          } catch { /* Auto-heal error ignored */ }
+        }
         setVapidKey(result.vapidKey);
         remember(next);
       } catch {

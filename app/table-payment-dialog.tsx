@@ -11,6 +11,7 @@ const moment = (value: number) => new Intl.DateTimeFormat("vi-VN", {timeZone: "A
 
 export function TablePaymentDialog({
   sessionId,
+  tableId,
   canClose = false,
   unservedCount = 0,
   onCloseSession,
@@ -18,6 +19,7 @@ export function TablePaymentDialog({
   onPaid
 }: {
   sessionId: string;
+  tableId?: string;
   canClose?: boolean;
   unservedCount?: number;
   onCloseSession?: () => Promise<void> | void;
@@ -67,7 +69,10 @@ export function TablePaymentDialog({
     setError("");
     void (async () => {
       try {
-        const response = await fetch(withStore("/api/admin/table-payment?session=" + encodeURIComponent(sessionId),storeId), {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+        const query = new URLSearchParams();
+        if (sessionId) query.set("session", sessionId);
+        if (tableId) query.set("tableId", tableId);
+        const response = await fetch(withStore("/api/admin/table-payment?" + query.toString(),storeId), {credentials: "same-origin", cache: "no-store", signal: controller.signal});
         const data = await response.json().catch(() => null) as (Partial<TablePaymentQuote> & {error?: string}) | null;
         if (!response.ok || !data) throw new Error(data?.error || "Chưa tải được số tiền của bàn. Vui lòng thử lại.");
         if (!cancelled) setQuote(data as TablePaymentQuote);
@@ -79,7 +84,7 @@ export function TablePaymentDialog({
       }
     })();
     return () => {cancelled = true; clearTimeout(timeout); controller.abort();};
-  }, [sessionId, revision,storeId]);
+  }, [sessionId, tableId, revision,storeId]);
 
   function refreshQuote() {
     if (paymentLock.current || uncertain) return;
@@ -90,7 +95,8 @@ export function TablePaymentDialog({
 
   async function confirmPayment() {
     if (paymentLock.current || loading || !quote || !quote.unpaidCount || quote.unservedCount>0 || (!paymentMethod && !attempt.current)) return;
-    const body: TablePaymentRequest = attempt.current ?? {sessionId, requestId: crypto.randomUUID(), orderIds: quote.orders.map(order => order.id), expectedTotal: quote.unpaidTotal, paymentMethod: paymentMethod as TablePaymentMethod};
+    const resolvedSessionId = quote.session?.id || sessionId;
+    const body: TablePaymentRequest = attempt.current ?? {sessionId: resolvedSessionId, requestId: crypto.randomUUID(), orderIds: quote.orders.map(order => order.id), expectedTotal: quote.unpaidTotal, paymentMethod: paymentMethod as TablePaymentMethod};
     attempt.current = body;
     paymentLock.current = true;
     setPaying(true);
