@@ -12,6 +12,7 @@ const moment = (value: number) => new Intl.DateTimeFormat("vi-VN", {timeZone: "A
 export function TablePaymentDialog({
   sessionId,
   tableId,
+  storeId: propStoreId,
   canClose = false,
   unservedCount = 0,
   onCloseSession,
@@ -20,13 +21,14 @@ export function TablePaymentDialog({
 }: {
   sessionId: string;
   tableId?: string;
+  storeId?: string;
   canClose?: boolean;
   unservedCount?: number;
   onCloseSession?: () => Promise<void> | void;
   onClose: () => void;
   onPaid: (result: TablePaymentResult) => void;
 }) {
-  const [storeId]=useState(activeStoreId);
+  const storeId = propStoreId || activeStoreId();
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const heading = useId();
@@ -94,9 +96,16 @@ export function TablePaymentDialog({
   }
 
   async function confirmPayment() {
-    if (paymentLock.current || loading || !quote || !quote.unpaidCount || quote.unservedCount>0 || (!paymentMethod && !attempt.current)) return;
+    if (paymentLock.current || loading || !quote || !quote.unpaidCount || (!paymentMethod && !attempt.current)) return;
     const resolvedSessionId = quote.session?.id || sessionId;
-    const body: TablePaymentRequest = attempt.current ?? {sessionId: resolvedSessionId, requestId: crypto.randomUUID(), orderIds: quote.orders.map(order => order.id), expectedTotal: quote.unpaidTotal, paymentMethod: paymentMethod as TablePaymentMethod};
+    const body: TablePaymentRequest & { allowUnserved?: boolean } = attempt.current ?? {
+      sessionId: resolvedSessionId,
+      requestId: crypto.randomUUID(),
+      orderIds: quote.orders.map(order => order.id),
+      expectedTotal: quote.unpaidTotal,
+      paymentMethod: paymentMethod as TablePaymentMethod,
+      allowUnserved: quote.unservedCount > 0 ? true : undefined
+    };
     attempt.current = body;
     paymentLock.current = true;
     setPaying(true);
@@ -192,13 +201,19 @@ export function TablePaymentDialog({
           {error && <div className="tp-error" role="alert"><CircleAlert size={24}/><p>{error}</p></div>}
           {loading ? <div className="tp-loading" role="status"><LoaderCircle className="spin" size={32}/>Đang kiểm tra các lần gọi món…</div> : !quote ? <button type="button" className="tp-secondary" onClick={refreshQuote}><RefreshCw size={22}/>Tải lại số tiền</button> : <>
             <div className="tp-totals"><div><span>Tổng lượt này</span><strong>{money(quote.total)}</strong></div><div><span>Đã thanh toán</span><strong>{money(quote.paidTotal)}</strong></div><div className="remaining"><span>Còn cần thu</span><strong>{money(quote.unpaidTotal)}</strong><small>{quote.unpaidCount} lần gọi món chưa thanh toán</small></div></div>
-            {quote.unservedCount>0 ? <div className="tp-notice" role="status"><Clock3 size={22}/><div><p>Bàn còn {quote.unservedCount} lượt gọi chưa phục vụ xong. Trở về hóa đơn để phục vụ hoặc hủy món đặt nhầm.</p><button type="button" className="tp-secondary" onClick={close}>Trở về hóa đơn</button></div></div> : !quote.unpaidCount ? <div className="tp-all-paid"><CheckCircle2 size={38}/><h3>Bàn không còn tiền cần thu</h3><p>Các lần gọi món đã được thanh toán. Có thể đóng bàn sau khi phục vụ xong.</p><button type="button" className="tp-primary" onClick={close}>Trở lại bàn</button></div> : <>
+            {quote.unservedCount > 0 && (
+              <div className="tp-notice" role="status">
+                <Clock3 size={22} />
+                <p>Bàn còn {quote.unservedCount} lượt gọi chưa hoàn tất phục vụ. Bạn vẫn có thể xác nhận thu tiền nếu khách thanh toán trước.</p>
+              </div>
+            )}
+            {!quote.unpaidCount ? <div className="tp-all-paid"><CheckCircle2 size={38}/><h3>Bàn không còn tiền cần thu</h3><p>Các lần gọi món đã được thanh toán. Có thể đóng bàn sau khi phục vụ xong.</p><button type="button" className="tp-primary" onClick={close}>Trở lại bàn</button></div> : <>
               <div className="tp-list-heading"><h3>Các lần gọi món sẽ thanh toán</h3><button type="button" disabled={paying || uncertain} onClick={refreshQuote}><RefreshCw size={19}/>Cập nhật</button></div>
               <div className="tp-orders">{quote.orders.map(order => <article key={order.id}><div><strong>#{order.code}</strong><time dateTime={new Date(order.created_at).toISOString()}>{moment(order.created_at)}</time><p>{order.items.map(item => `${item.quantity}× ${item.name}`).join(" · ")}</p></div><strong>{money(order.total)}</strong></article>)}</div>
               <p className="tp-hint">Chỉ thu các lần gọi món chưa thanh toán trong lượt khách hiện tại. Các khoản đã thu được giữ nguyên.</p>
               <fieldset className="tp-methods" disabled={paying || uncertain}><legend>Khách thanh toán bằng</legend>{([{id:"cash",label:"Tiền mặt",icon:Banknote},{id:"bank",label:"Chuyển khoản",icon:Landmark},{id:"other",label:"Khác",icon:WalletCards}] as const).map(method => <label key={method.id} className={paymentMethod === method.id ? "selected" : ""}><input type="radio" name="table-payment-method" value={method.id} checked={paymentMethod === method.id} onChange={() => setPaymentMethod(method.id)}/><method.icon size={30}/><span>{method.label}</span></label>)}</fieldset>
               <p className="tp-hint tp-time"><Clock3 size={19}/>Thời điểm thu tiền được ghi khi quán xác nhận đã nhận đủ.</p>
-              <div className="tp-footer"><button type="button" className="tp-secondary" disabled={paying} onClick={close}>Quay lại</button><button type="button" className="tp-primary" disabled={paying || quote.unservedCount>0 || (!paymentMethod && !uncertain)} onClick={() => void confirmPayment()}>{paying ? <LoaderCircle className="spin" size={24}/> : <Check size={24}/>}<span>{uncertain ? "Kiểm tra lại giao dịch" : "Xác nhận đã thu " + money(quote.unpaidTotal)}</span></button></div>
+              <div className="tp-footer"><button type="button" className="tp-secondary" disabled={paying} onClick={close}>Quay lại</button><button type="button" className="tp-primary" disabled={paying || (!paymentMethod && !uncertain)} onClick={() => void confirmPayment()}>{paying ? <LoaderCircle className="spin" size={24}/> : <Check size={24}/>}<span>{uncertain ? "Kiểm tra lại giao dịch" : "Xác nhận đã thu " + money(quote.unpaidTotal)}</span></button></div>
             </>}
           </>}
         </>

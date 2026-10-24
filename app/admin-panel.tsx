@@ -962,6 +962,7 @@ export default function AdminPanel({
           <TablePaymentDialog
             sessionId={tablePaymentSessionId}
             tableId={tablePaymentTableId ?? undefined}
+            storeId={activeStoreId()}
             canClose={canTables && (() => {
               const sessionOrders = data?.orders.filter(o => o.dining_session_id === tablePaymentSessionId && o.status !== "cancelled") ?? [];
               return sessionOrders.length > 0 && sessionOrders.every(o => o.status === "served");

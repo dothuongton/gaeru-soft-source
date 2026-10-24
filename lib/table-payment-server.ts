@@ -1,6 +1,6 @@
 import {database,publicOrder} from "./server";
 import {checkedText,OrderError} from "./menu";
-import {safeSession} from "./table-sessions";
+import {safeSession,ensureLegacySessions} from "./table-sessions";
 import type {TablePaymentQuote,TablePaymentResult} from "./table-payment-types";
 
 type ReceiptRow={
@@ -19,6 +19,15 @@ export async function getTablePaymentQuote(params:URLSearchParams):Promise<Table
   const tableId=checkedText(rawTable,64,true);
   const active=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
   if(active?.id) rawSession=active.id;
+  else {
+   const withUnpaid=await db.prepare("SELECT s.id FROM table_sessions s WHERE s.table_id = ? AND EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.paid = 0 AND o.status != 'cancelled') ORDER BY s.updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
+   if(withUnpaid?.id) rawSession=withUnpaid.id;
+   else {
+    await ensureLegacySessions(tableId);
+    const repaired=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
+    if(repaired?.id) rawSession=repaired.id;
+   }
+  }
  }
  if(!rawSession?.trim())throw new OrderError("Thiếu mã phiên bàn. Đóng bảng thanh toán và mở lại từ bàn đang phục vụ.",400);
  const sessionId=checkedText(rawSession,128,true);

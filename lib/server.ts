@@ -32,6 +32,76 @@ export async function deviceIdentity(request:Request,issue=false):Promise<{hash:
 }
 const seededStoresByDb = new WeakMap<object, Set<string>>();
 const seedInFlightByDb = new WeakMap<object, Map<string, Promise<void>>>();
+const appSchemaEnsuredByDb = new WeakSet<object>();
+
+export async function ensureAppSchema(): Promise<void> {
+ let dbObj: object;
+ let db: ReturnType<typeof rootDatabase>;
+ try {
+  db = rootDatabase();
+  dbObj = db as object;
+ } catch {
+  return;
+ }
+ if (appSchemaEnsuredByDb.has(dbObj)) return;
+
+ const statements = [
+  "ALTER TABLE orders ADD COLUMN last_actor text DEFAULT 'Nhân viên'",
+  "ALTER TABLE table_payment_receipts ADD COLUMN orders_json text",
+  "ALTER TABLE table_payment_receipts ADD COLUMN audit_json text",
+  "ALTER TABLE service_requests ADD COLUMN request_count integer DEFAULT 1",
+  "ALTER TABLE service_requests ADD COLUMN pending_count integer DEFAULT 1",
+  `CREATE TABLE IF NOT EXISTS order_audit (
+    id integer PRIMARY KEY AUTOINCREMENT,
+    store_id text NOT NULL,
+    order_id text NOT NULL,
+    session_id text,
+    kind text NOT NULL,
+    actor text NOT NULL,
+    at integer NOT NULL,
+    before_json text,
+    after_json text NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS order_audit_visit ON order_audit(store_id,session_id,id)",
+  `CREATE TABLE IF NOT EXISTS service_request_events (
+    store_id text NOT NULL DEFAULT 'main',
+    request_id text NOT NULL,
+    attempt_id text NOT NULL,
+    session_id text NOT NULL,
+    kind text NOT NULL,
+    note text NOT NULL,
+    created_at integer NOT NULL,
+    PRIMARY KEY (store_id, request_id)
+  )`,
+  "CREATE INDEX IF NOT EXISTS service_request_events_visit ON service_request_events(store_id,session_id,kind,created_at)",
+  `CREATE TABLE IF NOT EXISTS staff_push_subscriptions (
+    store_id text DEFAULT 'main' NOT NULL,
+    id text NOT NULL,
+    user_id text NOT NULL,
+    staff_account_id text,
+    device_id text NOT NULL,
+    endpoint text NOT NULL,
+    endpoint_hash text NOT NULL,
+    p256dh text NOT NULL,
+    auth text NOT NULL,
+    created_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    last_seen_at integer NOT NULL,
+    PRIMARY KEY(store_id, id)
+  )`,
+  "CREATE UNIQUE INDEX IF NOT EXISTS staff_push_user_device_store_unique ON staff_push_subscriptions (store_id, user_id, device_id)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS staff_push_endpoint_hash_store_unique ON staff_push_subscriptions (store_id, endpoint_hash)",
+  "CREATE INDEX IF NOT EXISTS staff_push_user_store ON staff_push_subscriptions (store_id, user_id)",
+  "CREATE INDEX IF NOT EXISTS staff_push_updated ON staff_push_subscriptions (store_id, updated_at)"
+ ];
+
+ for (const sql of statements) {
+  try {
+   await db.prepare(sql).run();
+  } catch {}
+ }
+ appSchemaEnsuredByDb.add(dbObj);
+}
 
 export function invalidateSeed(storeId?: string) {
  try {
@@ -54,6 +124,7 @@ export async function seed(){
  } catch {
   return;
  }
+ await ensureAppSchema();
  let seeded = seededStoresByDb.get(dbObj);
  if (!seeded) {
   seeded = new Set();

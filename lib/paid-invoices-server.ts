@@ -33,18 +33,35 @@ export async function listPaidInvoices(params:URLSearchParams):Promise<PaidInvoi
  if(range.tableId){clauses.push('tableId = ?');values.push(range.tableId);}
  if(search){clauses.push('(instr(lower(tableName),lower(?)) > 0 OR instr(lower(customerName),lower(?)) > 0 OR instr(lower(id),lower(?)) > 0)');values.push(search,search,search);}
  const db=database(),where=clauses.join(' AND ');
- const summary=await db.prepare(`WITH invoices AS (${source}) SELECT COUNT(*) AS total,COALESCE(SUM(amount),0) AS totalAmount FROM invoices WHERE ${where}`).bind(...values).first<{total:number;totalAmount:number}>();
- const total=summary?.total??0,pages=Math.ceil(total/size),page=Math.min(requestedPage,Math.max(1,pages));
- const rows=await db.prepare(`WITH invoices AS (${source}) SELECT * FROM invoices WHERE ${where} ORDER BY paidAt DESC,id DESC LIMIT ? OFFSET ?`).bind(...values,size,(page-1)*size).all<Record<string,unknown>>();
- return {invoices:rows.results.map(invoice),page,pageSize:size,pages,total,totalAmount:summary?.totalAmount??0,range:{from:range.from,to:range.to,timezone:'Asia/Ho_Chi_Minh'}};
+ try {
+  const summary=await db.prepare(`WITH invoices AS (${source}) SELECT COUNT(*) AS total,COALESCE(SUM(amount),0) AS totalAmount FROM invoices WHERE ${where}`).bind(...values).first<{total:number;totalAmount:number}>();
+  const total=summary?.total??0,pages=Math.ceil(total/size),page=Math.min(requestedPage,Math.max(1,pages));
+  const rows=await db.prepare(`WITH invoices AS (${source}) SELECT * FROM invoices WHERE ${where} ORDER BY paidAt DESC,id DESC LIMIT ? OFFSET ?`).bind(...values,size,(page-1)*size).all<Record<string,unknown>>();
+  return {invoices:rows.results.map(invoice),page,pageSize:size,pages,total,totalAmount:summary?.totalAmount??0,range:{from:range.from,to:range.to,timezone:'Asia/Ho_Chi_Minh'}};
+ } catch (err) {
+  console.error("listPaidInvoices database error:", err);
+  return {invoices:[],page:1,pageSize:size,pages:1,total:0,totalAmount:0,range:{from:range.from,to:range.to,timezone:'Asia/Ho_Chi_Minh'}};
+ }
 }
 export async function paidInvoiceDetail(id:string):Promise<PaidInvoiceDetail>{
  if(!/^(payment|order):[A-Za-z0-9_-]{1,80}$/.test(id))throw new OrderError('Mã hóa đơn không hợp lệ.');
  const db=database();
  const row=await db.prepare(`WITH invoices AS (${source}) SELECT * FROM invoices WHERE id = ?`).bind(id).first<Record<string,unknown>>();
  if(!row)throw new OrderError('Không tìm thấy hóa đơn đã thanh toán.',404);
- const receipt=id.startsWith('payment:')?await db.prepare('SELECT orders_json,order_ids_json,audit_json FROM table_payment_receipts WHERE id = ?').bind(id.slice(8)).first<{orders_json:string|null;order_ids_json:string;audit_json:string|null}>():null;
- if(receipt?.orders_json){const ids=JSON.parse(receipt.order_ids_json) as string[];return {invoice:invoice(row),orders:(JSON.parse(receipt.orders_json) as import("./menu").Order[]).map(order=>ids.includes(order.id)?{...order,paid:1,paid_at:Number(row.paidAt),payment_method:invoice(row).method}:order),snapshot:true,history:receipt.audit_json?JSON.parse(receipt.audit_json):[]};}
+ let receipt: {orders_json?:string|null;order_ids_json?:string;audit_json?:string|null}|null = null;
+ if(id.startsWith('payment:')){
+  try {
+   receipt = await db.prepare('SELECT orders_json,order_ids_json,audit_json FROM table_payment_receipts WHERE id = ?').bind(id.slice(8)).first<{orders_json:string|null;order_ids_json:string;audit_json:string|null}>();
+  } catch {
+   receipt = null;
+  }
+ }
+ if(receipt?.orders_json){
+  try {
+   const ids=JSON.parse(receipt.order_ids_json||'[]') as string[];
+   return {invoice:invoice(row),orders:(JSON.parse(receipt.orders_json) as import("./menu").Order[]).map(order=>ids.includes(order.id)?{...order,paid:1,paid_at:Number(row.paidAt),payment_method:invoice(row).method}:order),snapshot:true,history:receipt.audit_json?JSON.parse(receipt.audit_json):[]};
+  } catch {}
+ }
  const orders=id.startsWith('payment:')?
   await db.prepare('SELECT * FROM orders WHERE id IN (SELECT value FROM table_payment_receipts r,json_each(r.order_ids_json) WHERE r.id = ?) ORDER BY created_at,id').bind(id.slice(8)).all<Record<string,unknown>>():
   await db.prepare('SELECT * FROM orders WHERE id = ? AND paid = 1 AND status != ?').bind(id.slice(6),'cancelled').all<Record<string,unknown>>();

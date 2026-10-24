@@ -2,7 +2,7 @@ import {env} from "cloudflare:workers";
 import {conditionalJson, conditionalJsonWithEtag} from "@/lib/conditional-json";
 import {inStore, currentStoreId} from "@/lib/store-database";
 import {resolveStore,listStores,createStore,updateStoreStatus,saveStoreBranding} from "@/lib/store-platform";
-import {database,seed,deviceIdentity,getTable,getMenu,getShop,publicOrder,json,readBody} from "@/lib/server";
+import {database,seed,ensureAppSchema,deviceIdentity,getTable,getMenu,getShop,publicOrder,json,readBody} from "@/lib/server";
 import {getMenuConnection,requestTableSession,requireActiveSession,updateTableSession} from "@/lib/table-sessions";
 import {revenueReport,revenueOrders} from "@/lib/revenue-server";
 import {listSettlements,getSettlement} from "@/lib/settlement-server";
@@ -56,7 +56,7 @@ async function handleScoped(request:Request){
   if(path.startsWith("admin")&&!access?.isStaff)throw new OrderError("Tài khoản chưa được cấp quyền hoặc đã bị khóa. Vui lòng đăng nhập bằng tài khoản nhân viên được quản trị cấp quyền.",403);
   const actor=(access?.account?.name||access?.profile?.fullName||"Nhân viên")+" · "+(access?.userId||access?.account?.id||"staff");
   const allow=(permission:Permission)=>{if(!access||!hasPermission(access,permission))throw new OrderError("Bạn chưa được cấp quyền thực hiện chức năng này.",403);};
-  await seed();const db=database();
+  await ensureAppSchema();await seed();const db=database();
   if(request.method==="GET"){
    if(path==="shop-info"){const [shop,themeSettings]=await Promise.all([getShop(),getThemeSettings()]);return json({shop:{...shop,logo:shop.logo?"/api/branding-icon?store="+encodeURIComponent(currentStoreId())+"&v="+brandingRevision(shop):""},themeSettings});}
    if(path==="branding-icon"){const shop=await getShop();if(url.searchParams.has("v")&&url.searchParams.get("v")!==brandingRevision(shop))return json({error:"Ảnh thương hiệu đã thay đổi. Vui lòng tải lại trang."},404);const headers={"Cache-Control":url.searchParams.get("v")===brandingRevision(shop)?"public, max-age=31536000, immutable":"no-store","X-Content-Type-Options":"nosniff"};if(shop.logo){const binary=atob(shop.logo.split(",")[1]);return new Response(Uint8Array.from(binary,c=>c.charCodeAt(0)),{headers:{"Content-Type":"image/png",...headers}});}return new Response(shopIconSvg(shop.name),{headers:{"Content-Type":"image/svg+xml",...headers}});}
