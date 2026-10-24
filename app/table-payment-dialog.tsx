@@ -52,12 +52,17 @@ export function TablePaymentDialog({
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    dialog.current?.showModal();
+    if (dialog.current && !dialog.current.open) {
+      dialog.current.showModal();
+    }
     closeButton.current?.focus();
     return () => {
       alive.current = false;
       paymentController.current?.abort();
       document.body.style.overflow = previousOverflow;
+      if (dialog.current?.open) {
+        dialog.current.close();
+      }
       previous?.focus();
     };
   }, []);
@@ -104,7 +109,7 @@ export function TablePaymentDialog({
       orderIds: quote.orders.map(order => order.id),
       expectedTotal: quote.unpaidTotal,
       paymentMethod: paymentMethod as TablePaymentMethod,
-      allowUnserved: quote.unservedCount > 0 ? true : undefined
+      allowUnserved: true
     };
     attempt.current = body;
     paymentLock.current = true;

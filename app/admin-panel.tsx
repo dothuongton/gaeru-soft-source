@@ -957,10 +957,10 @@ export default function AdminPanel({
           />
         </Suspense>
       )}
-      {canPay && tablePaymentSessionId && (
+      {canPay && Boolean(tablePaymentSessionId || tablePaymentTableId) && (
         <Suspense fallback={null}>
           <TablePaymentDialog
-            sessionId={tablePaymentSessionId}
+            sessionId={tablePaymentSessionId || ""}
             tableId={tablePaymentTableId ?? undefined}
             storeId={activeStoreId()}
             canClose={canTables && (() => {

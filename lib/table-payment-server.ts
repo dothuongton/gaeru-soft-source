@@ -13,9 +13,14 @@ const changedMessage="Số tiền hoặc danh sách đơn của bàn vừa thay 
 /** The quote and its unpaid orders come from one consistent D1 read snapshot. */
 export async function getTablePaymentQuote(params:URLSearchParams):Promise<TablePaymentQuote>{
  let rawSession=params.get("session")??params.get("sessionId");
- const rawTable=params.get("tableId")??params.get("table");
+ let rawTable=params.get("tableId")??params.get("table");
  const db=database();
- if(!rawSession?.trim()&&rawTable?.trim()){
+ if(rawSession?.startsWith("orphan-")){
+  if(!rawTable) rawTable=rawSession.slice(7);
+  rawSession=null;
+ }
+ if(!rawSession?.trim()) rawSession=null;
+ if(!rawSession&&rawTable?.trim()){
   const tableId=checkedText(rawTable,64,true);
   const active=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status IN ('active','pending') ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
   if(active?.id) rawSession=active.id;
@@ -26,23 +31,23 @@ export async function getTablePaymentQuote(params:URLSearchParams):Promise<Table
     await ensureLegacySessions(tableId);
     const repaired=await db.prepare("SELECT id FROM table_sessions WHERE table_id = ? AND status IN ('active','pending') ORDER BY updated_at DESC LIMIT 1").bind(tableId).first<{id:string}>();
     if(repaired?.id) rawSession=repaired.id;
+    else {
+     const orphanOrder=await db.prepare("SELECT customer_name FROM orders WHERE table_id = ? AND paid = 0 AND status != 'cancelled' ORDER BY created_at DESC LIMIT 1").bind(tableId).first<{customer_name:string}>();
+     if(orphanOrder){
+      const newSessionId='legacy-'+crypto.randomUUID();
+      const tableName=(await db.prepare("SELECT name FROM dining_tables WHERE id = ?").bind(tableId).first<{name:string}>())?.name||("Bàn "+tableId);
+      const now=Date.now();
+      await db.prepare("INSERT INTO table_sessions (id,table_id,table_name,browser_hash,customer_name,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").bind(newSessionId,tableId,tableName,'',orphanOrder.customer_name||'Khách tại bàn','active',now,now).run();
+      await db.prepare("UPDATE orders SET dining_session_id = ? WHERE table_id = ? AND paid = 0 AND status != 'cancelled'").bind(newSessionId,tableId).run();
+      rawSession=newSessionId;
+     }
+    }
    }
   }
  }
  if(!rawSession?.trim())throw new OrderError("Thiếu mã phiên bàn. Đóng bảng thanh toán và mở lại từ bàn đang phục vụ.",400);
  const sessionId=checkedText(rawSession,128,true);
- const result=await db.batch([
-  db.prepare("SELECT s.id,s.table_id,COALESCE(t.name,s.table_name) AS table_name,s.customer_name,s.status,s.created_at,s.updated_at FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id WHERE s.id = ?").bind(sessionId),
-  db.prepare(`SELECT
-   COALESCE(SUM(CASE WHEN status != 'cancelled' THEN total ELSE 0 END),0) AS total,
-   COALESCE(SUM(CASE WHEN status != 'cancelled' AND paid = 1 THEN total ELSE 0 END),0) AS paidTotal,
-   COALESCE(SUM(CASE WHEN status != 'cancelled' AND paid = 0 THEN total ELSE 0 END),0) AS unpaidTotal,
-   COUNT(CASE WHEN status != 'cancelled' AND paid = 0 THEN 1 END) AS unpaidCount,
-   COUNT(CASE WHEN status NOT IN ('cancelled','served') THEN 1 END) AS unservedCount
-   FROM orders WHERE dining_session_id = ?`).bind(sessionId),
-  db.prepare("SELECT * FROM orders WHERE dining_session_id = ? AND paid = 0 AND status != 'cancelled' ORDER BY created_at ASC,id ASC").bind(sessionId)
- ]);
- const session=result[0].results[0] as Record<string,unknown>|undefined;
+ let session=await db.prepare("SELECT s.id,s.table_id,COALESCE(t.name,s.table_name) AS table_name,s.customer_name,s.status,s.created_at,s.updated_at FROM table_sessions s LEFT JOIN dining_tables t ON t.id = s.table_id WHERE s.id = ?").bind(sessionId).first<Record<string,unknown>>();
  if(!session){
   let fallbackTableId = rawTable?.trim() ? checkedText(rawTable,64,true) : null;
   if(!fallbackTableId){
@@ -59,13 +64,35 @@ export async function getTablePaymentQuote(params:URLSearchParams):Promise<Table
    if(repaired?.id){
     return getTablePaymentQuote(new URLSearchParams({session: repaired.id}));
    }
+   const orphanOrder=await db.prepare("SELECT customer_name FROM orders WHERE table_id = ? AND paid = 0 AND status != 'cancelled' ORDER BY created_at DESC LIMIT 1").bind(fallbackTableId).first<{customer_name:string}>();
+   if(orphanOrder){
+    const newSessionId='legacy-'+crypto.randomUUID();
+    const tableName=(await db.prepare("SELECT name FROM dining_tables WHERE id = ?").bind(fallbackTableId).first<{name:string}>())?.name||("Bàn "+fallbackTableId);
+    const now=Date.now();
+    await db.prepare("INSERT INTO table_sessions (id,table_id,table_name,browser_hash,customer_name,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").bind(newSessionId,fallbackTableId,tableName,'',orphanOrder.customer_name||'Khách tại bàn','active',now,now).run();
+    await db.prepare("UPDATE orders SET dining_session_id = ? WHERE table_id = ? AND paid = 0 AND status != 'cancelled'").bind(newSessionId,fallbackTableId).run();
+    return getTablePaymentQuote(new URLSearchParams({session: newSessionId}));
+   }
   }
   throw new OrderError("Không tìm thấy lượt phục vụ của bàn.",404);
  }
  if(session.status!=="active")throw new OrderError("Bàn chưa mở hoặc lượt phục vụ đã kết thúc. Vui lòng tải lại trang.",409);
- const totals=result[1].results[0] as Pick<TablePaymentQuote,"total"|"paidTotal"|"unpaidTotal"|"unpaidCount"|"unservedCount">|undefined;
+ if(session.table_id){
+  await db.prepare("UPDATE orders SET dining_session_id = ? WHERE table_id = ? AND paid = 0 AND status != 'cancelled' AND (dining_session_id IS NULL OR dining_session_id != ?)").bind(session.id, session.table_id, session.id).run();
+ }
+ const result=await db.batch([
+  db.prepare(`SELECT
+   COALESCE(SUM(CASE WHEN status != 'cancelled' THEN total ELSE 0 END),0) AS total,
+   COALESCE(SUM(CASE WHEN status != 'cancelled' AND paid = 1 THEN total ELSE 0 END),0) AS paidTotal,
+   COALESCE(SUM(CASE WHEN status != 'cancelled' AND paid = 0 THEN total ELSE 0 END),0) AS unpaidTotal,
+   COUNT(CASE WHEN status != 'cancelled' AND paid = 0 THEN 1 END) AS unpaidCount,
+   COUNT(CASE WHEN status NOT IN ('cancelled','served') THEN 1 END) AS unservedCount
+   FROM orders WHERE dining_session_id = ?`).bind(session.id),
+  db.prepare("SELECT * FROM orders WHERE dining_session_id = ? AND paid = 0 AND status != 'cancelled' ORDER BY created_at ASC,id ASC").bind(session.id)
+ ]);
+ const totals=result[0].results[0] as Pick<TablePaymentQuote,"total"|"paidTotal"|"unpaidTotal"|"unpaidCount"|"unservedCount">|undefined;
  if(!totals)throw new OrderError("Chưa lấy được số tiền của bàn. Vui lòng thử lại.",503);
- return {session:safeSession(session),generatedAt:Date.now(),...totals,orders:(result[2].results as Record<string,unknown>[]).map(publicOrder)};
+ return {session:safeSession(session),generatedAt:Date.now(),...totals,orders:(result[1].results as Record<string,unknown>[]).map(publicOrder)};
 }
 
 /**
@@ -88,6 +115,11 @@ export async function payTableBalance(body:Record<string,unknown>,actor="Nhân v
  const normalized=JSON.stringify({sessionId,orderIds,expectedTotal:amount,paymentMethod});
  const requestHash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(normalized))),byte=>byte.toString(16).padStart(2,"0")).join("");
  const db=database(),attemptId=crypto.randomUUID(),paidAt=Date.now();
+ const sessionRow=await db.prepare("SELECT table_id, status FROM table_sessions WHERE id = ?").bind(sessionId).first<{table_id:string;status:string}>();
+ if(sessionRow?.table_id&&sessionRow.status==="active"){
+  await db.prepare("UPDATE orders SET dining_session_id = ? WHERE table_id = ? AND paid = 0 AND status != 'cancelled' AND (dining_session_id IS NULL OR dining_session_id != ?)").bind(sessionId,sessionRow.table_id,sessionId).run();
+ }
+ await db.prepare("UPDATE orders SET dining_session_id = ? WHERE id IN (SELECT value FROM json_each(?)) AND (dining_session_id IS NULL OR dining_session_id != ?)").bind(sessionId,orderIdsJson,sessionId).run();
  const allowUnserved=Boolean(body.allowUnserved);
  const unservedPredicate=allowUnserved?"":"AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.dining_session_id = s.id AND o.status NOT IN ('cancelled','served'))";
  let result;

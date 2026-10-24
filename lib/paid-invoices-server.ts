@@ -12,7 +12,7 @@ const source=`
  UNION ALL
  SELECT 'order:'||o.id AS id,o.table_id AS tableId,o.table_name AS tableName,o.customer_name AS customerName,o.paid_at AS paidAt,o.total AS amount,COALESCE(o.payment_method,'unknown') AS method,1 AS orderCount,'legacy' AS source
  FROM orders o WHERE o.paid = 1 AND o.status != 'cancelled' AND o.paid_at IS NOT NULL
- AND NOT EXISTS(SELECT 1 FROM table_payment_receipts r WHERE json_valid(r.order_ids_json) AND EXISTS(SELECT 1 FROM json_each(r.order_ids_json) ids WHERE ids.value = o.id))
+ AND NOT EXISTS(SELECT 1 FROM table_payment_receipts r WHERE json_valid(r.order_ids_json) = 1 AND EXISTS(SELECT 1 FROM json_each(CASE WHEN json_valid(r.order_ids_json) = 1 THEN r.order_ids_json ELSE '[]' END) ids WHERE ids.value = o.id))
 `;
 function invoice(row:Record<string,unknown>):PaidInvoice{
  const method=['cash','bank','other','unknown'].includes(row.method as string)?row.method as PaymentMethod:'unknown';
